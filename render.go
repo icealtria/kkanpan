@@ -250,20 +250,20 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 	viewMode := GetViewMode()
 	effectiveGroup, isAuto := GetEffectiveGroup(viewMode)
 
-	// 顶部 Header
+	// 顶部 Header (加大字号适配 300ppi 墨水屏)
 	nowStr := time.Now().Format("2006-01-02 15:04:05")
 	modeTag := fmt.Sprintf("[%s]", viewMode)
 	if isAuto {
 		modeTag = fmt.Sprintf("[自动: %s]", effectiveGroup)
 	}
-	DrawText(img, 30, 15, "KKANPAN - KPW3 看盘", 24, color.Black)
-	DrawText(img, width-450, 18, modeTag, 18, color.Black)
+	DrawText(img, 30, 16, "KKANPAN 看盘", 32, color.Black)
+	DrawText(img, width-460, 20, modeTag, 24, color.Black)
 
-	// 右上角 [X] 退出按钮 (高亮边框)
-	drawRect(img, width-75, 10, 45, 34, 0, 2)
-	DrawText(img, width-58, 16, "X", 18, color.Black)
+	// 右上角 [X] 退出按钮 (加大触控区域 65x46)
+	drawRect(img, width-95, 10, 65, 46, 0, 3)
+	DrawText(img, width-72, 18, "X", 26, color.Black)
 
-	// 绘制 5 个触控交互 Tab 栏 (Y: 52 ~ 88)
+	// 绘制 5 个触控交互 Tab 栏 (Y: 68 ~ 118，高 50px，字号 24px)
 	tabs := []struct {
 		Key   string
 		Label string
@@ -276,30 +276,30 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 	}
 
 	tabCount := len(tabs)
-	tabGap := 8
+	tabGap := 10
 	tabTotalW := width - 60
 	tabW := (tabTotalW - (tabCount-1)*tabGap) / tabCount
-	tabY := 52
-	tabH := 36
+	tabY := 68
+	tabH := 50
 
 	for i, t := range tabs {
 		tx := 30 + i*(tabW+tabGap)
 		selected := (viewMode == t.Key)
-		textW := MeasureText(t.Label, 18)
+		textW := MeasureText(t.Label, 24)
 		padX := (tabW - textW) / 2
 		if padX < 2 {
 			padX = 2
 		}
 		if selected {
 			fillRect(img, tx, tabY, tabW, tabH, 0)
-			DrawText(img, tx+padX, tabY+8, t.Label, 18, color.White)
+			DrawText(img, tx+padX, tabY+12, t.Label, 24, color.White)
 		} else {
 			drawRect(img, tx, tabY, tabW, tabH, 0, 2)
-			DrawText(img, tx+padX, tabY+8, t.Label, 18, color.Black)
+			DrawText(img, tx+padX, tabY+12, t.Label, 24, color.Black)
 		}
 	}
 
-	drawLine(img, 30, 96, width-30, 96, 0, 2)
+	drawLine(img, 30, 128, width-30, 128, 0, 3)
 
 	// 分组数据
 	groups := make(map[string][]StockData)
@@ -307,24 +307,33 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 		groups[d.Group] = append(groups[d.Group], d)
 	}
 
-	startY := 110
+	startY := 142
 
 	// 单组大视图模式 vs 全部概览模式
 	if effectiveGroup != "全部" && len(groups[effectiveGroup]) > 0 {
 		list := groups[effectiveGroup]
-		fillRect(img, 30, startY, width-60, 36, 0)
+		fillRect(img, 30, startY, width-60, 44, 0)
 		gTitle := fmt.Sprintf("=== %s 专属走势 (%d 只自选) ===", effectiveGroup, len(list))
-		DrawText(img, 45, startY+8, gTitle, 18, color.White)
-		startY += 45
+		DrawText(img, 45, startY+10, gTitle, 24, color.White)
+		startY += 52
+
+		cardH := 145
+		if len(list) <= 3 {
+			cardH = 175
+		} else if len(list) > 6 {
+			cardH = 110
+		}
 
 		for _, item := range list {
-			cardH := 65
 			drawRect(img, 30, startY, width-60, cardH, 0, 2)
-			label := item.Code
-			if item.Name != "" {
-				label = fmt.Sprintf("%-6s %s", item.Code, item.Name)
+
+			// 中文名称 (32px 大字) 与 代码 (20px)
+			nameStr := item.Name
+			if nameStr == "" {
+				nameStr = item.Code
 			}
-			DrawText(img, 45, startY+22, label, 18, color.Black)
+			DrawText(img, 45, startY+18, nameStr, 32, color.Black)
+			DrawText(img, 45, startY+62, item.Code, 20, color.Gray{Y: 100})
 
 			arrow := " "
 			if item.Change > 0 {
@@ -338,17 +347,20 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 			}
 			chgStr := fmt.Sprintf("%s %+.2f (%+.2f%%)", arrow, item.Change, item.Pct)
 
+			// 折线图 (大尺寸)
+			chartW := width - 490
+			chartH := cardH - 30
 			if len(item.Prices) > 2 {
-				drawSparklineGraph(img, item.Prices, 300, startY+10, 420, 45, item.Code)
+				drawSparklineGraph(img, item.Prices, 210, startY+15, chartW, chartH, item.Code)
 			}
 
-			priceW := MeasureText(priceStr, 24)
-			chgW := MeasureText(chgStr, 16)
-			DrawText(img, width-45-priceW, startY+10, priceStr, 24, color.Black)
-			DrawText(img, width-45-chgW, startY+38, chgStr, 16, color.Black)
+			priceW := MeasureText(priceStr, 38)
+			chgW := MeasureText(chgStr, 24)
+			DrawText(img, width-45-priceW, startY+16, priceStr, 38, color.Black)
+			DrawText(img, width-45-chgW, startY+64, chgStr, 24, color.Black)
 
-			startY += cardH + 6
-			if startY > height-80 {
+			startY += cardH + 10
+			if startY > height-100 {
 				break
 			}
 		}
@@ -358,18 +370,20 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 			if !ok || len(list) == 0 {
 				continue
 			}
-			fillRect(img, 30, startY, width-60, 32, 0)
-			DrawText(img, 45, startY+6, "[ "+gName+" ]", 18, color.White)
-			startY += 38
+			fillRect(img, 30, startY, width-60, 38, 0)
+			DrawText(img, 45, startY+8, "[ "+gName+" ]", 22, color.White)
+			startY += 44
 
 			for _, item := range list {
-				cardH := 65
+				cardH := 95
 				drawRect(img, 30, startY, width-60, cardH, 0, 2)
-				label := item.Code
-				if item.Name != "" {
-					label = fmt.Sprintf("%-6s %s", item.Code, item.Name)
+
+				nameStr := item.Name
+				if nameStr == "" {
+					nameStr = item.Code
 				}
-				DrawText(img, 45, startY+22, label, 18, color.Black)
+				DrawText(img, 45, startY+14, nameStr, 26, color.Black)
+				DrawText(img, 45, startY+50, item.Code, 18, color.Gray{Y: 100})
 
 				arrow := " "
 				if item.Change > 0 {
@@ -384,40 +398,41 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 				chgStr := fmt.Sprintf("%s %+.2f (%+.2f%%)", arrow, item.Change, item.Pct)
 
 				if len(item.Prices) > 2 {
-					drawSparklineGraph(img, item.Prices, 300, startY+10, 420, 45, item.Code)
+					drawSparklineGraph(img, item.Prices, 240, startY+12, 440, 70, item.Code)
 				}
 
-				priceW := MeasureText(priceStr, 24)
-				chgW := MeasureText(chgStr, 16)
-				DrawText(img, width-45-priceW, startY+10, priceStr, 24, color.Black)
-				DrawText(img, width-45-chgW, startY+38, chgStr, 16, color.Black)
+				priceW := MeasureText(priceStr, 34)
+				chgW := MeasureText(chgStr, 20)
+				DrawText(img, width-45-priceW, startY+14, priceStr, 34, color.Black)
+				DrawText(img, width-45-chgW, startY+52, chgStr, 20, color.Black)
 
-				startY += cardH + 6
-				if startY > height-80 {
+				startY += cardH + 8
+				if startY > height-100 {
 					break
 				}
 			}
-			startY += 6
+			startY += 8
 		}
 	}
 
-	// ponytail: AUTO 模式期货常驻卡片（与 ALL 同尺寸 65），非 ticker
+	// ponytail: AUTO 模式期货常驻卡片 (加大高度与字号)
 	if isAuto && effectiveGroup != "全部" && effectiveGroup != "期货" {
 		if futs, ok := groups["期货"]; ok && len(futs) > 0 {
-			fillRect(img, 30, startY, width-60, 32, 0)
-			DrawText(img, 45, startY+6, "[ 期货 ]", 18, color.White)
-			startY += 38
+			fillRect(img, 30, startY, width-60, 38, 0)
+			DrawText(img, 45, startY+8, "[ 期货 ]", 22, color.White)
+			startY += 44
 			for _, f := range futs {
-				if startY > height-80 {
+				if startY > height-100 {
 					break
 				}
-				cardH := 65
+				cardH := 85
 				drawRect(img, 30, startY, width-60, cardH, 0, 2)
-				label := f.Code
-				if f.Name != "" {
-					label = fmt.Sprintf("%-6s %s", f.Code, f.Name)
+				nameStr := f.Name
+				if nameStr == "" {
+					nameStr = f.Code
 				}
-				DrawText(img, 45, startY+22, label, 18, color.Black)
+				DrawText(img, 45, startY+14, nameStr, 26, color.Black)
+				DrawText(img, 45, startY+48, f.Code, 18, color.Gray{Y: 100})
 				arrow := " "
 				if f.Change > 0 {
 					arrow = "▲"
@@ -429,17 +444,17 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 					priceStr = fmt.Sprintf("%.2f", f.Price)
 				}
 				chgStr := fmt.Sprintf("%s %+.2f (%+.2f%%)", arrow, f.Change, f.Pct)
-				priceW := MeasureText(priceStr, 24)
-				chgW := MeasureText(chgStr, 16)
-				DrawText(img, width-45-priceW, startY+10, priceStr, 24, color.Black)
-				DrawText(img, width-45-chgW, startY+38, chgStr, 16, color.Black)
-				startY += cardH + 6
+				priceW := MeasureText(priceStr, 34)
+				chgW := MeasureText(chgStr, 20)
+				DrawText(img, width-45-priceW, startY+14, priceStr, 34, color.Black)
+				DrawText(img, width-45-chgW, startY+50, chgStr, 20, color.Black)
+				startY += cardH + 8
 			}
 		}
 	}
 
 	// 底部触控提示栏
-	DrawText(img, 30, height-38, "点击右上角 [X] 退出 | 点击顶部 Tab 切换视图 | "+nowStr, 16, color.Gray{Y: 100})
+	DrawText(img, 30, height-40, "点击右上角 [X] 退出 | 点击顶部 Tab 切换视图 | "+nowStr, 20, color.Gray{Y: 100})
 	return img
 }
 

@@ -152,15 +152,15 @@ func startTouchListener(screenWidth, screenHeight int) {
 	handleTap := func(x, y int) {
 		log.Printf("Touch tap detected at (%d, %d)", x, y)
 
-		// 1. 右上角 [X] 关闭按钮判定
-		if x >= screenWidth-90 && y <= 55 {
+		// 1. 右上角 [X] 关闭按钮判定 (区域加大，更好点击)
+		if x >= screenWidth-120 && y <= 75 {
 			log.Println("Close [X] button tapped!")
 			quitApp()
 			return
 		}
 
-		// 2. 顶部 Tab 栏判定 (y: 45 ~ 95)
-		if y >= 45 && y <= 95 {
+		// 2. 顶部 Tab 栏判定 (y: 60 ~ 135)
+		if y >= 60 && y <= 135 {
 			tabTotalW := screenWidth - 60
 			tabCount := 5
 			tabW := tabTotalW / tabCount
@@ -173,8 +173,8 @@ func startTouchListener(screenWidth, screenHeight int) {
 			return
 		}
 
-		// 3. 底部点击触发立即刷新 (y > screenHeight - 80)
-		if y >= screenHeight-80 {
+		// 3. 底部点击触发立即刷新 (y > screenHeight - 100)
+		if y >= screenHeight-100 {
 			log.Println("Bottom touched: Triggering immediate refresh...")
 			select {
 			case triggerRefreshCh <- true:
