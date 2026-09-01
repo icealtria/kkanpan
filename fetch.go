@@ -267,6 +267,47 @@ func fetchMinute(code string) []float64 {
 	return prices
 }
 
+func fetchUsMinute(code string) []float64 {
+	// gu.qq.com/usAAPL.OQ/gg 同源：web.ifzq.gtimg.cn/appstock/app/UsMinute/query?code=usAAPL
+	urlStr := "https://web.ifzq.gtimg.cn/appstock/app/UsMinute/query?code=" + url.QueryEscape(code)
+	req, _ := http.NewRequest("GET", urlStr, nil)
+	req.Header.Set("Referer", "https://gu.qq.com/")
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	var j struct {
+		Data map[string]struct {
+			Data struct {
+				Data []string `json:"data"`
+			} `json:"data"`
+		} `json:"data"`
+		Code int `json:"code"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&j); err != nil || j.Code != 0 {
+		return nil
+	}
+	item, ok := j.Data[code]
+	if !ok || len(item.Data.Data) < 2 {
+		return nil
+	}
+	var prices []float64
+	for _, row := range item.Data.Data {
+		parts := strings.Fields(row)
+		if len(parts) >= 2 {
+			if p, err := strconv.ParseFloat(parts[1], 64); err == nil && p > 0 {
+				prices = append(prices, p)
+			}
+		}
+	}
+	if len(prices) < 2 {
+		return nil
+	}
+	return prices
+}
+
 func parseQT(code string, vals []string) (price, change, pct, prev float64) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -329,14 +370,10 @@ func refreshData() []StockData {
 			var res chartResult
 			if strings.HasPrefix(code, "sh") || strings.HasPrefix(code, "sz") {
 				res.prices = fetchMinute(code)
+			} else if strings.HasPrefix(code, "us") {
+				res.prices = fetchUsMinute(code) // ponytail: 腾讯 UsMinute 直连稳定，期货仍无图
 			} else {
-				res.prices, res.yPrice, res.yPrev = fetchYahoo(code)
-				if len(res.prices) < 2 {
-					if p := fetchEastmoneyPrices(code); len(p) > 2 {
-						res.prices = p
-						res.yPrice, res.yPrev = 0, 0
-					}
-				}
+				res.prices = nil
 			}
 			mu.Lock()
 			chartMap[code] = res
@@ -364,35 +401,41 @@ func refreshData() []StockData {
 			}
 		}
 		prices := cRes.prices
-		if len(prices) < 2 {
-			histMutex.Lock()
-			h := priceHist[code]
-			if price > 0 {
-				h = append(h, price)
-				if len(h) > tradingMinutes(code) {
-					if tradingMinutes(code) > 0 {
-						h = h[len(h)-tradingMinutes(code):]
-					} else if len(h) > 1440 {
-						h = h[len(h)-1440:]
+		// ponytail: 仅A股/美股维护分时，期货无图不进 priceHist
+		isChart := strings.HasPrefix(code, "sh") || strings.HasPrefix(code, "sz") || strings.HasPrefix(code, "us")
+		if isChart {
+			if len(prices) < 2 {
+				histMutex.Lock()
+				h := priceHist[code]
+				if price > 0 {
+					h = append(h, price)
+					if len(h) > tradingMinutes(code) {
+						if tradingMinutes(code) > 0 {
+							h = h[len(h)-tradingMinutes(code):]
+						} else if len(h) > 1440 {
+							h = h[len(h)-1440:]
+						}
 					}
+					priceHist[code] = h
 				}
-				priceHist[code] = h
+				if len(h) > 2 {
+					prices = append([]float64(nil), h...)
+				}
+				histMutex.Unlock()
+			} else {
+				histMutex.Lock()
+				h := priceHist[code]
+				if price > 0 {
+					h = append(h, price)
+					if len(h) > tradingMinutes(code) && tradingMinutes(code) > 0 {
+						h = h[len(h)-tradingMinutes(code):]
+					}
+					priceHist[code] = h
+				}
+				histMutex.Unlock()
 			}
-			if len(h) > 2 {
-				prices = append([]float64(nil), h...)
-			}
-			histMutex.Unlock()
 		} else {
-			histMutex.Lock()
-			h := priceHist[code]
-			if price > 0 {
-				h = append(h, price)
-				if len(h) > tradingMinutes(code) && tradingMinutes(code) > 0 {
-					h = h[len(h)-tradingMinutes(code):]
-				}
-				priceHist[code] = h
-			}
-			histMutex.Unlock()
+			prices = nil
 		}
 		svg := ""
 		if len(prices) > 2 {

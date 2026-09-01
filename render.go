@@ -314,20 +314,14 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 		drawString(img, 45, startY+10, gTitle, 2, 255)
 		startY += 45
 
-		cardH := 115
-		if len(list) <= 3 {
-			cardH = 150
-		} else if len(list) > 6 {
-			cardH = 85
-		}
-
 		for _, item := range list {
+			cardH := 65
 			drawRect(img, 30, startY, width-60, cardH, 0, 2)
 			label := item.Code
 			if item.Name != "" {
 				label = fmt.Sprintf("%-8s %s", item.Code, item.Name)
 			}
-			drawString(img, 45, startY+15, label, 2, 0)
+			drawString(img, 45, startY+22, label, 2, 0)
 
 			arrow := " "
 			if item.Change > 0 {
@@ -341,17 +335,17 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 			}
 			chgStr := fmt.Sprintf("%s %+.2f (%+.2f%%)", arrow, item.Change, item.Pct)
 
-			chartW := width - 480
-			chartH := cardH - 24
 			if len(item.Prices) > 2 {
-				drawSparklineGraph(img, item.Prices, 220, startY+12, chartW, chartH, item.Code)
+				drawSparklineGraph(img, item.Prices, 300, startY+10, 420, 45, item.Code)
 			}
 
-			drawString(img, width-240, startY+15, priceStr, 3, 0)
-			drawString(img, width-240, startY+52, chgStr, 2, 0)
+			priceW := len(priceStr) * 8 * 3
+			chgW := len(chgStr) * 8 * 2
+			drawString(img, width-45-priceW, startY+10, priceStr, 3, 0)
+			drawString(img, width-45-chgW, startY+38, chgStr, 2, 0)
 
-			startY += cardH + 10
-			if startY > height-100 {
+			startY += cardH + 6
+			if startY > height-80 {
 				break
 			}
 		}
@@ -398,8 +392,10 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 					drawSparklineGraph(img, item.Prices, 300, startY+10, 420, 45, item.Code)
 				}
 
-				drawString(img, width-300, startY+10, priceStr, 3, 0)
-				drawString(img, width-300, startY+38, chgStr, 2, 0)
+				priceW := len(priceStr) * 8 * 3
+				chgW := len(chgStr) * 8 * 2
+				drawString(img, width-45-priceW, startY+10, priceStr, 3, 0)
+				drawString(img, width-45-chgW, startY+38, chgStr, 2, 0)
 
 				startY += cardH + 6
 				if startY > height-80 {
@@ -407,6 +403,44 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 				}
 			}
 			startY += 6
+		}
+	}
+
+	// ponytail: AUTO 模式期货常驻卡片（与 ALL 同尺寸 65），非 ticker
+	if isAuto && effectiveGroup != "全部" && effectiveGroup != "期货" {
+		if futs, ok := groups["期货"]; ok && len(futs) > 0 {
+			fillRect(img, 30, startY, width-60, 32, 0)
+			drawString(img, 45, startY+8, "[ FUTURES ]", 2, 255)
+			startY += 38
+			for _, f := range futs {
+				if startY > height-80 {
+					break
+				}
+				cardH := 65
+				drawRect(img, 30, startY, width-60, cardH, 0, 2)
+				label := f.Code
+				if f.Name != "" {
+					label = fmt.Sprintf("%-8s %s", f.Code, f.Name)
+				}
+				drawString(img, 45, startY+22, label, 2, 0)
+				arrow := " "
+				if f.Change > 0 {
+					arrow = "^"
+				} else if f.Change < 0 {
+					arrow = "v"
+				}
+				priceStr := "--"
+				if f.Price > 0 {
+					priceStr = fmt.Sprintf("%.2f", f.Price)
+				}
+				chgStr := fmt.Sprintf("%s %+.2f (%+.2f%%)", arrow, f.Change, f.Pct)
+				priceW := len(priceStr) * 8 * 3
+				chgW := len(chgStr) * 8 * 2
+				drawString(img, width-45-priceW, startY+10, priceStr, 3, 0)
+				drawString(img, width-45-chgW, startY+38, chgStr, 2, 0)
+				// 期货无分时，不画线
+				startY += cardH + 6
+			}
 		}
 	}
 
@@ -477,20 +511,14 @@ func renderScreenSVG(data []StockData, width, height int) string {
 		sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="18" fill="white">=== %s FOCUS VIEW (%d STOCKS) ===</text>`, startY+24, effectiveGroup, len(list)))
 		startY += 45
 
-		cardH := 115
-		if len(list) <= 3 {
-			cardH = 150
-		} else if len(list) > 6 {
-			cardH = 85
-		}
-
 		for _, item := range list {
+			cardH := 65
 			sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="2"/>`, startY, width-60, cardH))
 			label := item.Code
 			if item.Name != "" {
 				label = fmt.Sprintf("%-8s %s", item.Code, item.Name)
 			}
-			sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="18">%s</text>`, startY+28, label))
+			sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="16">%s</text>`, startY+30, label))
 
 			arrow := ""
 			if item.Change > 0 {
@@ -504,11 +532,9 @@ func renderScreenSVG(data []StockData, width, height int) string {
 			}
 			chgStr := fmt.Sprintf("%s %+.2f (%+.2f%%)", arrow, item.Change, item.Pct)
 
-			chartW := width - 480
-			chartH := cardH - 24
 			if len(item.Prices) > 2 {
-				pts, _, _, _ := sparklinePoints(item.Prices, item.Code, chartW, chartH)
-				gx, gy := 220, startY+12
+				pts, _, _, _ := sparklinePoints(item.Prices, item.Code, 420, 45)
+				gx, gy := 300, startY+10
 				var shifted []string
 				for _, pt := range pts {
 					parts := strings.Split(pt, ",")
@@ -518,15 +544,14 @@ func renderScreenSVG(data []StockData, width, height int) string {
 						shifted = append(shifted, x+","+y)
 					}
 				}
-				sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="1"/>`, gx, gy, chartW, chartH))
+				sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="%d" height="45" fill="none" stroke="black" stroke-width="1"/>`, gx, gy))
 				sb.WriteString(fmt.Sprintf(`<polyline fill="none" stroke="black" stroke-width="1.5" points="%s"/>`, strings.Join(shifted, " ")))
 			}
 
-			sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="28" font-weight="bold" text-anchor="end">%s</text>`, width-45, startY+35, priceStr))
-			sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="16" text-anchor="end">%s</text>`, width-45, startY+65, chgStr))
-
-			startY += cardH + 10
-			if startY > height-100 {
+			sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="22" font-weight="bold" text-anchor="end">%s</text>`, width-30, startY+28, priceStr))
+			sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="14" text-anchor="end">%s</text>`, width-30, startY+48, chgStr))
+			startY += cardH + 6
+			if startY > height-80 {
 				break
 			}
 		}
@@ -593,6 +618,39 @@ func renderScreenSVG(data []StockData, width, height int) string {
 				}
 			}
 			startY += 6
+		}
+	}
+
+	if isAuto && effectiveGroup != "全部" && effectiveGroup != "期货" {
+		if futs, ok := groups["期货"]; ok && len(futs) > 0 {
+			sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="32" fill="black"/>`, startY, width-60))
+			sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="16" fill="white">[ FUTURES ]</text>`, startY+22))
+			startY += 38
+			for _, f := range futs {
+				if startY > height-80 {
+					break
+				}
+				priceStr := "--"
+				if f.Price > 0 {
+					priceStr = fmt.Sprintf("%.2f", f.Price)
+				}
+				arrow := ""
+				if f.Change > 0 {
+					arrow = "^"
+				} else if f.Change < 0 {
+					arrow = "v"
+				}
+				chgStr := fmt.Sprintf("%s %+.2f (%+.2f%%)", arrow, f.Change, f.Pct)
+				label := f.Code
+				if f.Name != "" {
+					label = fmt.Sprintf("%-8s %s", f.Code, f.Name)
+				}
+				sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="65" fill="none" stroke="black" stroke-width="2"/>`, startY, width-60))
+				sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="16">%s</text>`, startY+30, label))
+				sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="22" font-weight="bold" text-anchor="end">%s</text>`, width-30, startY+28, priceStr))
+				sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="14" text-anchor="end">%s</text>`, width-30, startY+48, chgStr))
+				startY += 71
+			}
 		}
 	}
 
