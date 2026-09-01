@@ -1,0 +1,21 @@
+{
+	"items": [
+		{
+			"name": "看盘 (kkanpan)",
+			"priority": 1,
+			"items": [
+				{
+					"name": "启动全屏看盘",
+					"priority": 1,
+					"action": "./bin/launch.sh",
+					"exitmenu": true
+				},
+				{
+					"name": "停止看盘 (恢复系统)",
+					"priority": 2,
+					"action": "./bin/stop.sh"
+				}
+			]
+		}
+	]
+}

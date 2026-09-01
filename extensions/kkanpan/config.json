@@ -1,0 +1,10 @@
+[
+  {"code": "sh000001", "name": "上证指数", "group": "A股"},
+  {"code": "sz399006", "name": "创业板指", "group": "A股"},
+  {"code": "usAAPL", "name": "苹果", "group": "美股"},
+  {"code": "usNVDA", "name": "英伟达", "group": "美股"},
+  {"code": "usTSLA", "name": "特斯拉", "group": "美股"},
+  {"code": "hf_GC", "name": "黄金", "group": "期货"},
+  {"code": "hf_CL", "name": "原油", "group": "期货"},
+  {"code": "usVIX", "name": "VIX", "group": "期货"}
+]
