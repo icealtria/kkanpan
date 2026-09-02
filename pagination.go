@@ -26,16 +26,6 @@ func appendGroup(blocks []block, group string, list []StockData, cardH int) []bl
 	return blocks
 }
 
-func largeCardH(n int) int {
-	if n <= 3 {
-		return 175
-	}
-	if n > 6 {
-		return 110
-	}
-	return 145
-}
-
 func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 	groups := make(map[string][]StockData)
 	for _, d := range data {
@@ -50,16 +40,9 @@ func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 				continue
 			}
 			if style == "large" {
-				n := len(list)
-				cardH := 145
-				if n <= 3 {
-					cardH = 175
-				} else if n > 6 {
-					cardH = 110
-				}
 				blocks = append(blocks, block{isHeader: true, group: gName, h: 44, gap: 6})
 				for _, it := range list {
-					blocks = append(blocks, block{isHeader: false, group: gName, data: it, h: cardH + 10, gap: 10})
+					blocks = append(blocks, block{isHeader: false, group: gName, data: it, h: 155, gap: 10})
 				}
 			} else {
 				blocks = appendGroup(blocks, gName, list, 103)
@@ -78,16 +61,9 @@ func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 				continue
 			}
 			if style == "large" {
-				n := len(list)
-				cardH := 145
-				if n <= 3 {
-					cardH = 175
-				} else if n > 6 {
-					cardH = 110
-				}
 				blocks = append(blocks, block{isHeader: true, group: g, h: 44, gap: 6})
 				for _, it := range list {
-					blocks = append(blocks, block{isHeader: false, group: g, data: it, h: cardH + 10, gap: 10})
+					blocks = append(blocks, block{isHeader: false, group: g, data: it, h: 155, gap: 10})
 				}
 			} else {
 				blocks = appendGroup(blocks, g, list, 103)
@@ -100,16 +76,9 @@ func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 		return blocks
 	}
 	if style == "large" {
-		n := len(list)
-		cardH := 145
-		if n <= 3 {
-			cardH = 175
-		} else if n > 6 {
-			cardH = 110
-		}
 		blocks = append(blocks, block{isHeader: true, group: effectiveGroup, h: 44, gap: 6})
 		for _, it := range list {
-			blocks = append(blocks, block{isHeader: false, group: effectiveGroup, data: it, h: cardH + 10, gap: 10})
+			blocks = append(blocks, block{isHeader: false, group: effectiveGroup, data: it, h: 155, gap: 10})
 		}
 	} else {
 		blocks = appendGroup(blocks, effectiveGroup, list, 103)

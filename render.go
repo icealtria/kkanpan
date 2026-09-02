@@ -92,7 +92,7 @@ func svgWriteCard(sb *strings.Builder, item StockData, startY, width, cardH int,
 	priceStr, chgStr := stockStrings(item.Price, item.Change, item.Pct, true)
 	if withSparkline && len(item.Prices) > 2 {
 		gx, gy := 240, startY+12
-		sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="440" height="70" fill="none" stroke="black" stroke-width="1"/>`, gx, gy))
+		sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="480" height="70" fill="none" stroke="black" stroke-width="1"/>`, gx, gy))
 		// 直接带偏移计算，避免 sparklinePoints→string→parse 往返
 		prices := item.Prices
 		minVal, maxVal := prices[0], prices[0]
@@ -111,7 +111,7 @@ func svgWriteCard(sb *strings.Builder, item StockData, startY, width, cardH int,
 		denom := float64(len(prices) - 1)
 		pts := make([]string, 0, len(prices))
 		for i, p := range prices {
-			x := float64(gx) + 2.0 + float64(i)*float64(440-4)/denom
+			x := float64(gx) + 2.0 + float64(i)*float64(480-4)/denom
 			y := float64(gy) + 2.0 + (maxVal-p)*float64(70-4)/rng
 			pts = append(pts, strconv.FormatFloat(x, 'f', 1, 64)+","+strconv.FormatFloat(y, 'f', 1, 64))
 		}
@@ -528,7 +528,7 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 			DrawText(img, 45, startY+48, item.Code, 18, color.Gray{Y: 100})
 			priceStr, chgStr := stockStrings(item.Price, item.Change, item.Pct, false)
 			if len(item.Prices) > 2 {
-				drawSparklineGraph(img, item.Prices, 240, startY+12, 440, 70, item.Code)
+				drawSparklineGraph(img, item.Prices, 240, startY+12, 480, 70, item.Code)
 			}
 			priceW := MeasureText(priceStr, 34)
 			chgW := MeasureText(chgStr, 20)
