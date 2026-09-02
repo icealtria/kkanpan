@@ -166,7 +166,7 @@ func fetchYahoo(code string) ([]float64, float64, float64) {
 	return prices, price, prev
 }
 
-func parseGtimgRows(rows []string, filterZero bool) []float64 {
+func parseGtimgRows(rows []string) []float64 {
 	prices := make([]float64, 0, len(rows))
 	for _, row := range rows {
 		parts := strings.Fields(row)
@@ -174,7 +174,7 @@ func parseGtimgRows(rows []string, filterZero bool) []float64 {
 			continue
 		}
 		p, err := strconv.ParseFloat(parts[1], 64)
-		if err != nil || (filterZero && p <= 0) {
+		if err != nil {
 			continue
 		}
 		prices = append(prices, p)
@@ -185,10 +185,19 @@ func parseGtimgRows(rows []string, filterZero bool) []float64 {
 	return prices
 }
 
-func fetchMinute(code string) []float64 {
-	urlStr := "https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=" + code
+func fetchGtimgMinute(code string) []float64 {
+	isUS := strings.HasPrefix(code, "us")
+	var urlStr string
+	if isUS {
+		urlStr = "https://web.ifzq.gtimg.cn/appstock/app/UsMinute/query?code=" + url.QueryEscape(code)
+	} else {
+		urlStr = "https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=" + code
+	}
 	req, _ := http.NewRequest("GET", urlStr, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0")
+	if isUS {
+		req.Header.Set("Referer", "https://gu.qq.com/")
+	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil
@@ -197,6 +206,11 @@ func fetchMinute(code string) []float64 {
 	var j map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&j); err != nil {
 		return nil
+	}
+	if isUS {
+		if codeVal, ok := j["code"].(float64); ok && codeVal != 0 {
+			return nil
+		}
 	}
 	dataMap, _ := j["data"].(map[string]interface{})
 	item, _ := dataMap[code].(map[string]interface{})
@@ -208,35 +222,20 @@ func fetchMinute(code string) []float64 {
 			rows = append(rows, s)
 		}
 	}
-	return parseGtimgRows(rows, false)
-}
-
-func fetchUsMinute(code string) []float64 {
-	urlStr := "https://web.ifzq.gtimg.cn/appstock/app/UsMinute/query?code=" + url.QueryEscape(code)
-	req, _ := http.NewRequest("GET", urlStr, nil)
-	req.Header.Set("Referer", "https://gu.qq.com/")
-	req.Header.Set("User-Agent", "Mozilla/5.0")
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil
+	prices := parseGtimgRows(rows)
+	if isUS && prices != nil {
+		filtered := prices[:0]
+		for _, p := range prices {
+			if p > 0 {
+				filtered = append(filtered, p)
+			}
+		}
+		if len(filtered) < 2 {
+			return nil
+		}
+		prices = filtered
 	}
-	defer resp.Body.Close()
-	var j struct {
-		Data map[string]struct {
-			Data struct {
-				Data []string `json:"data"`
-			} `json:"data"`
-		} `json:"data"`
-		Code int `json:"code"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&j); err != nil || j.Code != 0 {
-		return nil
-	}
-	item, ok := j.Data[code]
-	if !ok {
-		return nil
-	}
-	return parseGtimgRows(item.Data.Data, true)
+	return prices
 }
 
 func parseQT(code string, vals []string) (price, change, pct, prev float64) {
@@ -308,11 +307,7 @@ func refreshData() []StockData {
 			var res chartResult
 			switch cfg.Source {
 			case "tencent":
-				if strings.HasPrefix(cfg.Code, "sh") || strings.HasPrefix(cfg.Code, "sz") {
-					res.prices = fetchMinute(cfg.Code)
-				} else if strings.HasPrefix(cfg.Code, "us") {
-					res.prices = fetchUsMinute(cfg.Code)
-				}
+				res.prices = fetchGtimgMinute(cfg.Code)
 			case "yahoo":
 				res.prices, res.yPrice, res.yPrev = fetchYahoo(cfg.Code)
 			}

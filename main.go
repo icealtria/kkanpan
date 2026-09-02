@@ -36,7 +36,7 @@ func main() {
 
 	if *once {
 		img := renderScreenImage(data, *width, *height)
-		_ = updateKindleScreen(img, true)
+		_ = screenDiffer.UpdateScreen(img, true)
 		log.Println("Once mode completed.")
 		return
 	}
@@ -53,7 +53,7 @@ func main() {
 		defer ticker.Stop()
 
 		img := renderScreenImage(data, *width, *height)
-		_ = updateKindleScreen(img, true)
+		_ = screenDiffer.UpdateScreen(img, true)
 
 		for {
 			select {
@@ -62,7 +62,7 @@ func main() {
 				d := refreshData()
 				img := renderScreenImage(d, *width, *height)
 				full := (refreshCount % 5) == 0
-				if err := updateKindleScreen(img, full); err != nil {
+				if err := screenDiffer.UpdateScreen(img, full); err != nil {
 					log.Printf("Screen update error: %v", err)
 				}
 			case <-triggerRefreshCh:
@@ -71,7 +71,7 @@ func main() {
 				screenDiffer.ClearDiffCache()
 				d := getData()
 				img := renderScreenImage(d, *width, *height)
-				_ = updateKindleScreen(img, false)
+				_ = screenDiffer.UpdateScreen(img, false)
 			}
 		}
 	} else {

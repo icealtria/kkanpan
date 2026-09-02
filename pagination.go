@@ -164,12 +164,3 @@ func clampPage(total int) int {
 	}
 	return currentPage
 }
-
-func neededStocksData() []StockData {
-	cfgs := neededStocks()
-	out := make([]StockData, len(cfgs))
-	for i, c := range cfgs {
-		out[i] = StockData{Code: c.Code, Name: c.Name, Group: c.Group}
-	}
-	return out
-}

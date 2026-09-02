@@ -81,27 +81,6 @@ func stockStrings(price, change, pct float64, isSVG bool) (priceStr, chgStr stri
 	return
 }
 
-func shiftedPoints(pts []string, gx, gy int) []string {
-	shifted := make([]string, 0, len(pts))
-	for _, pt := range pts {
-		parts := strings.Split(pt, ",")
-		if len(parts) != 2 {
-			continue
-		}
-		x := fmt.Sprintf("%.1f", mustParseFloat(parts[0])+float64(gx))
-		y := fmt.Sprintf("%.1f", mustParseFloat(parts[1])+float64(gy))
-		shifted = append(shifted, x+","+y)
-	}
-	return shifted
-}
-
-func svgItemLabel(item StockData) string {
-	if item.Name != "" {
-		return fmt.Sprintf("%-8s %s", item.Code, item.Name)
-	}
-	return item.Code
-}
-
 func svgWriteCard(sb *strings.Builder, item StockData, startY, width, cardH int, withSparkline bool) {
 	sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="2"/>`, startY, width-60, cardH))
 	nameStr := item.Name
@@ -112,11 +91,31 @@ func svgWriteCard(sb *strings.Builder, item StockData, startY, width, cardH int,
 	sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="18" fill="#666">%s</text>`, startY+62, item.Code))
 	priceStr, chgStr := stockStrings(item.Price, item.Change, item.Pct, true)
 	if withSparkline && len(item.Prices) > 2 {
-		pts, _, _, _ := sparklinePoints(item.Prices, item.Code, 440, 70)
 		gx, gy := 240, startY+12
-		shifted := shiftedPoints(pts, gx, gy)
 		sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="440" height="70" fill="none" stroke="black" stroke-width="1"/>`, gx, gy))
-		sb.WriteString(fmt.Sprintf(`<polyline fill="none" stroke="black" stroke-width="1.5" points="%s"/>`, strings.Join(shifted, " ")))
+		// 直接带偏移计算，避免 sparklinePoints→string→parse 往返
+		prices := item.Prices
+		minVal, maxVal := prices[0], prices[0]
+		for _, p := range prices {
+			if p < minVal {
+				minVal = p
+			}
+			if p > maxVal {
+				maxVal = p
+			}
+		}
+		rng := maxVal - minVal
+		if rng == 0 {
+			rng = 1
+		}
+		denom := float64(len(prices) - 1)
+		pts := make([]string, 0, len(prices))
+		for i, p := range prices {
+			x := float64(gx) + 2.0 + float64(i)*float64(440-4)/denom
+			y := float64(gy) + 2.0 + (maxVal-p)*float64(70-4)/rng
+			pts = append(pts, strconv.FormatFloat(x, 'f', 1, 64)+","+strconv.FormatFloat(y, 'f', 1, 64))
+		}
+		sb.WriteString(fmt.Sprintf(`<polyline fill="none" stroke="black" stroke-width="1.5" points="%s"/>`, strings.Join(pts, " ")))
 	}
 	chgY := startY + 64
 	if withSparkline {
@@ -623,10 +622,4 @@ func renderScreenSVG(data []StockData, width, height int) string {
 	sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="18" font-weight="bold" text-anchor="end">%s</text>`, width-30, height-16, statusStr))
 	sb.WriteString(`</svg>`)
 	return sb.String()
-}
-
-func mustParseFloat(s string) float64 {
-	var v float64
-	fmt.Sscanf(s, "%f", &v)
-	return v
 }

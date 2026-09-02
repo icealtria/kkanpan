@@ -4,17 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"image"
 	"image/png"
 	"log"
 	"net/http"
 	"strings"
 	"time"
 )
-
-func updateKindleScreen(img *image.Gray, fullRefresh bool) error {
-	return screenDiffer.UpdateScreen(img, fullRefresh)
-}
 
 func startHTTPServer(host string, port int) {
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

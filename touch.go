@@ -213,12 +213,10 @@ func startTouchListener(screenWidth, screenHeight int) {
 				return
 			}
 			if x > screenWidth*2/3 {
-				var total int
 				cacheMutex.RLock()
+				total := 1
 				if len(cachedData) > 0 {
 					total = GetTotalPages(cachedData, screenWidth, screenHeight)
-				} else {
-					total = GetTotalPages(neededStocksData(), screenWidth, screenHeight)
 				}
 				cacheMutex.RUnlock()
 				if total == 0 {
@@ -275,12 +273,10 @@ func startTouchListener(screenWidth, screenHeight int) {
 		}
 		// 仅保留垂直滑动翻页，水平手势已移除（易误触，Tab 改为点按切换）
 		if ady > 120 && ady > adx*2 {
-			var total int
 			cacheMutex.RLock()
+			total := 1
 			if len(cachedData) > 0 {
 				total = GetTotalPages(cachedData, screenWidth, screenHeight)
-			} else {
-				total = GetTotalPages(neededStocksData(), screenWidth, screenHeight)
 			}
 			cacheMutex.RUnlock()
 			if total <= 1 {

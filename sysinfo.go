@@ -197,16 +197,6 @@ func restoreFB() {
 	_ = exec.Command("sh", "-c", "cat /var/tmp/kkanpan-fb.dump > /dev/fb0 2>/dev/null; rm -f /var/tmp/kkanpan-fb.dump").Run()
 }
 
-// DisablePillow 共存模式入口 (兼容旧调用) -> 转调共存模式
-func DisablePillow() {
-	DisableCoexistMode()
-}
-
-// EnablePillow 共存模式恢复 (兼容旧调用)
-func EnablePillow() {
-	EnableCoexistMode()
-}
-
 // DisableCoexistMode 共存模式: 不杀 framework, 通过 pillow+awesome+wmctrl+statusbar 屏蔽状态栏
 func DisableCoexistMode() {
 	_ = exec.Command("lipc-set-prop", "-i", "com.lab126.powerd", "preventScreenSaver", "1").Run()
