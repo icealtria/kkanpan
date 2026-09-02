@@ -168,6 +168,26 @@ func fetchYahoo(code string) ([]float64, float64, float64) {
 	return prices, price, prev
 }
 
+// 纯核: gtimg 分时行 "09:30 12.34 ..." -> price， equational: map parse . filter (>0?_) 
+func parseGtimgRows(rows []string, filterZero bool) []float64 {
+	prices := make([]float64, 0, len(rows))
+	for _, row := range rows {
+		parts := strings.Fields(row)
+		if len(parts) < 2 {
+			continue
+		}
+		p, err := strconv.ParseFloat(parts[1], 64)
+		if err != nil || (filterZero && p <= 0) {
+			continue
+		}
+		prices = append(prices, p)
+	}
+	if len(prices) < 2 {
+		return nil
+	}
+	return prices
+}
+
 func fetchMinute(code string) []float64 {
 	urlStr := "https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=" + code
 	req, _ := http.NewRequest("GET", urlStr, nil)
@@ -184,22 +204,14 @@ func fetchMinute(code string) []float64 {
 	dataMap, _ := j["data"].(map[string]interface{})
 	item, _ := dataMap[code].(map[string]interface{})
 	d, _ := item["data"].(map[string]interface{})
-	rows, _ := d["data"].([]interface{})
-	var prices []float64
-	for _, row := range rows {
-		if str, ok := row.(string); ok {
-			parts := strings.Fields(str)
-			if len(parts) >= 2 {
-				if p, err := strconv.ParseFloat(parts[1], 64); err == nil {
-					prices = append(prices, p)
-				}
-			}
+	rowsIf, _ := d["data"].([]interface{})
+	rows := make([]string, 0, len(rowsIf))
+	for _, r := range rowsIf {
+		if s, ok := r.(string); ok {
+			rows = append(rows, s)
 		}
 	}
-	if len(prices) < 2 {
-		return nil
-	}
-	return prices
+	return parseGtimgRows(rows, false)
 }
 
 func fetchUsMinute(code string) []float64 {
@@ -224,22 +236,10 @@ func fetchUsMinute(code string) []float64 {
 		return nil
 	}
 	item, ok := j.Data[code]
-	if !ok || len(item.Data.Data) < 2 {
+	if !ok {
 		return nil
 	}
-	var prices []float64
-	for _, row := range item.Data.Data {
-		parts := strings.Fields(row)
-		if len(parts) >= 2 {
-			if p, err := strconv.ParseFloat(parts[1], 64); err == nil && p > 0 {
-				prices = append(prices, p)
-			}
-		}
-	}
-	if len(prices) < 2 {
-		return nil
-	}
-	return prices
+	return parseGtimgRows(item.Data.Data, true)
 }
 
 func parseQT(code string, vals []string) (price, change, pct, prev float64) {

@@ -26,6 +26,17 @@ func pageHeight(height int) int {
 	return h
 }
 
+func appendGroup(blocks []block, group string, list []StockData, cardH int) []block {
+	if len(list) == 0 {
+		return blocks
+	}
+	blocks = append(blocks, block{isHeader: true, group: group, h: 44, gap: 6})
+	for _, it := range list {
+		blocks = append(blocks, block{isHeader: false, group: group, data: it, h: cardH, gap: 8})
+	}
+	return blocks
+}
+
 func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 	groups := make(map[string][]StockData)
 	for _, d := range data {
@@ -34,52 +45,26 @@ func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 	var blocks []block
 	if effectiveGroup == "" {
 		if !isAuto || len(appConfig.PinnedGroups) == 0 {
-			return nil // 真正空屏
+			return nil
 		}
-		// AUTO 空档期仅显示常驻组
 		for _, pg := range appConfig.PinnedGroups {
-			futs, ok := groups[pg]
-			if !ok || len(futs) == 0 {
-				continue
-			}
-			blocks = append(blocks, block{isHeader: true, group: pg, h: 44, gap: 6})
-			for _, f := range futs {
-				blocks = append(blocks, block{isHeader: false, group: pg, data: f, h: 103, gap: 8})
-			}
+			blocks = appendGroup(blocks, pg, groups[pg], 103)
 		}
 		return blocks
 	}
 	if effectiveGroup != "ALL" && len(groups[effectiveGroup]) > 0 {
-		list := groups[effectiveGroup]
-		blocks = append(blocks, block{isHeader: true, group: effectiveGroup, h: 44, gap: 6})
-		for _, it := range list {
-			blocks = append(blocks, block{isHeader: false, group: effectiveGroup, data: it, h: 103, gap: 8})
-		}
+		blocks = appendGroup(blocks, effectiveGroup, groups[effectiveGroup], 103)
 		if isAuto {
 			for _, pg := range appConfig.PinnedGroups {
 				if pg == effectiveGroup {
 					continue
 				}
-				futs, ok := groups[pg]
-				if !ok || len(futs) == 0 {
-					continue
-				}
-				blocks = append(blocks, block{isHeader: true, group: pg, h: 44, gap: 6}) // 38+6
-				for _, f := range futs {
-					blocks = append(blocks, block{isHeader: false, group: pg, data: f, h: 93, gap: 8}) // 85+8
-				}
+				blocks = appendGroup(blocks, pg, groups[pg], 93)
 			}
 		}
 	} else if effectiveGroup == "ALL" {
 		for _, gName := range GetAllGroups() {
-			list, ok := groups[gName]
-			if !ok || len(list) == 0 {
-				continue
-			}
-			blocks = append(blocks, block{isHeader: true, group: gName, h: 44, gap: 6})
-			for _, it := range list {
-				blocks = append(blocks, block{isHeader: false, group: gName, data: it, h: 103, gap: 8}) // 95+8
-			}
+			blocks = appendGroup(blocks, gName, groups[gName], 103)
 		}
 	}
 	return blocks

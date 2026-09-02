@@ -56,6 +56,71 @@ func svgSparkline(prices []float64, w, h int, code string) string {
 </svg>`, w, h, w, h, w, h, poly)
 }
 
+// 纯核: stock 显示字符串 (map fusion: price/change/pct -> arrow+priceStr+chgStr)
+func stockStrings(price, change, pct float64, isSVG bool) (priceStr, chgStr string) {
+	if price > 0 {
+		priceStr = fmt.Sprintf("%.2f", price)
+	} else {
+		priceStr = "--"
+	}
+	arrow := " "
+	if isSVG {
+		arrow = ""
+	}
+	if change > 0 {
+		if isSVG {
+			arrow = "^"
+		} else {
+			arrow = "▲"
+		}
+	} else if change < 0 {
+		if isSVG {
+			arrow = "v"
+		} else {
+			arrow = "▼"
+		}
+	}
+	chgStr = fmt.Sprintf("%s %+.2f (%+.2f%%)", arrow, change, pct)
+	return
+}
+
+func shiftedPoints(pts []string, gx, gy int) []string {
+	shifted := make([]string, 0, len(pts))
+	for _, pt := range pts {
+		parts := strings.Split(pt, ",")
+		if len(parts) != 2 {
+			continue
+		}
+		x := fmt.Sprintf("%.1f", mustParseFloat(parts[0])+float64(gx))
+		y := fmt.Sprintf("%.1f", mustParseFloat(parts[1])+float64(gy))
+		shifted = append(shifted, x+","+y)
+	}
+	return shifted
+}
+
+func svgItemLabel(item StockData) string {
+	if item.Name != "" {
+		return fmt.Sprintf("%-8s %s", item.Code, item.Name)
+	}
+	return item.Code
+}
+
+func svgWriteCard(sb *strings.Builder, item StockData, startY, width int, withSparkline bool) {
+	cardH := 65
+	sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="2"/>`, startY, width-60, cardH))
+	sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="16">%s</text>`, startY+30, svgItemLabel(item)))
+	priceStr, chgStr := stockStrings(item.Price, item.Change, item.Pct, true)
+	if withSparkline && len(item.Prices) > 2 {
+		pts, _, _, _ := sparklinePoints(item.Prices, item.Code, 420, 45)
+		gx, gy := 300, startY+10
+		shifted := shiftedPoints(pts, gx, gy)
+		sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="420" height="45" fill="none" stroke="black" stroke-width="1"/>`, gx, gy))
+		sb.WriteString(fmt.Sprintf(`<polyline fill="none" stroke="black" stroke-width="1.5" points="%s"/>`, strings.Join(shifted, " ")))
+	}
+	sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="22" font-weight="bold" text-anchor="end">%s</text>`, width-30, startY+28, priceStr))
+	sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="14" text-anchor="end">%s</text>`, width-30, startY+48, chgStr))
+}
+
 // E-Ink 位图引擎 — Kindle eips 用 (inline thickPixel 避免闭包分配)
 func drawLine(img *image.Gray, x0, y0, x1, y1 int, col uint8, width int) {
 	dx := int(math.Abs(float64(x1 - x0)))
@@ -430,63 +495,29 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 			startY += b.h
 			continue
 		}
-		// 卡片: 统一为 ALL 同款紧凑尺寸 (95+8)
 		item := b.data
 		pinned := isPinnedGroup(b.group)
-		if pinned {
-			cardH := b.h - b.gap
-			drawRect(img, 30, startY, width-60, cardH, 0, 2)
-			nameStr := item.Name
-			if nameStr == "" {
-				nameStr = item.Code
-			}
-			DrawText(img, 45, startY+14, nameStr, 26, color.Black)
-			DrawText(img, 45, startY+48, item.Code, 18, color.Gray{Y: 100})
-			arrow := " "
-			if item.Change > 0 {
-				arrow = "▲"
-			} else if item.Change < 0 {
-				arrow = "▼"
-			}
-			priceStr := "--"
-			if item.Price > 0 {
-				priceStr = fmt.Sprintf("%.2f", item.Price)
-			}
-			chgStr := fmt.Sprintf("%s %+.2f (%+.2f%%)", arrow, item.Change, item.Pct)
-			priceW := MeasureText(priceStr, 34)
-			chgW := MeasureText(chgStr, 20)
-			DrawText(img, width-45-priceW, startY+14, priceStr, 34, color.Black)
-			DrawText(img, width-45-chgW, startY+50, chgStr, 20, color.Black)
-			startY += b.h
-		} else {
-			cardH := b.h - b.gap
-			drawRect(img, 30, startY, width-60, cardH, 0, 2)
-			nameStr := item.Name
-			if nameStr == "" {
-				nameStr = item.Code
-			}
-			DrawText(img, 45, startY+14, nameStr, 26, color.Black)
-			DrawText(img, 45, startY+50, item.Code, 18, color.Gray{Y: 100})
-			arrow := " "
-			if item.Change > 0 {
-				arrow = "▲"
-			} else if item.Change < 0 {
-				arrow = "▼"
-			}
-			priceStr := "--"
-			if item.Price > 0 {
-				priceStr = fmt.Sprintf("%.2f", item.Price)
-			}
-			chgStr := fmt.Sprintf("%s %+.2f (%+.2f%%)", arrow, item.Change, item.Pct)
-			if len(item.Prices) > 2 {
-				drawSparklineGraph(img, item.Prices, 240, startY+12, 440, 70, item.Code)
-			}
-			priceW := MeasureText(priceStr, 34)
-			chgW := MeasureText(chgStr, 20)
-			DrawText(img, width-45-priceW, startY+14, priceStr, 34, color.Black)
-			DrawText(img, width-45-chgW, startY+52, chgStr, 20, color.Black)
-			startY += b.h
+		cardH := b.h - b.gap
+		drawRect(img, 30, startY, width-60, cardH, 0, 2)
+		nameStr := item.Name
+		if nameStr == "" {
+			nameStr = item.Code
 		}
+		DrawText(img, 45, startY+14, nameStr, 26, color.Black)
+		DrawText(img, 45, startY+48, item.Code, 18, color.Gray{Y: 100})
+		priceStr, chgStr := stockStrings(item.Price, item.Change, item.Pct, false)
+		if !pinned && len(item.Prices) > 2 {
+			drawSparklineGraph(img, item.Prices, 240, startY+12, 440, 70, item.Code)
+		}
+		priceW := MeasureText(priceStr, 34)
+		chgW := MeasureText(chgStr, 20)
+		chgY := startY + 50
+		if !pinned {
+			chgY = startY + 52
+		}
+		DrawText(img, width-45-priceW, startY+14, priceStr, 34, color.Black)
+		DrawText(img, width-45-chgW, chgY, chgStr, 20, color.Black)
+		startY += b.h
 	}
 	// 页码指示 (多页时显示在分隔线上方居中, 上下翻页直觉)
 	if totalPages > 1 {
@@ -567,45 +598,8 @@ func renderScreenSVG(data []StockData, width, height int) string {
 		startY += 45
 
 		for _, item := range list {
-			cardH := 65
-			sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="2"/>`, startY, width-60, cardH))
-			label := item.Code
-			if item.Name != "" {
-				label = fmt.Sprintf("%-8s %s", item.Code, item.Name)
-			}
-			sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="16">%s</text>`, startY+30, label))
-
-			arrow := ""
-			if item.Change > 0 {
-				arrow = "^"
-			} else if item.Change < 0 {
-				arrow = "v"
-			}
-			priceStr := "--"
-			if item.Price > 0 {
-				priceStr = fmt.Sprintf("%.2f", item.Price)
-			}
-			chgStr := fmt.Sprintf("%s %+.2f (%+.2f%%)", arrow, item.Change, item.Pct)
-
-			if len(item.Prices) > 2 {
-				pts, _, _, _ := sparklinePoints(item.Prices, item.Code, 420, 45)
-				gx, gy := 300, startY+10
-				var shifted []string
-				for _, pt := range pts {
-					parts := strings.Split(pt, ",")
-					if len(parts) == 2 {
-						x := fmt.Sprintf("%.1f", mustParseFloat(parts[0])+float64(gx))
-						y := fmt.Sprintf("%.1f", mustParseFloat(parts[1])+float64(gy))
-						shifted = append(shifted, x+","+y)
-					}
-				}
-				sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="420" height="45" fill="none" stroke="black" stroke-width="1"/>`, gx, gy))
-				sb.WriteString(fmt.Sprintf(`<polyline fill="none" stroke="black" stroke-width="1.5" points="%s"/>`, strings.Join(shifted, " ")))
-			}
-
-			sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="22" font-weight="bold" text-anchor="end">%s</text>`, width-30, startY+28, priceStr))
-			sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="14" text-anchor="end">%s</text>`, width-30, startY+48, chgStr))
-			startY += cardH + 6
+			svgWriteCard(&sb, item, startY, width, true)
+			startY += 65 + 6
 			if startY > height-80 {
 				break
 			}
@@ -621,45 +615,8 @@ func renderScreenSVG(data []StockData, width, height int) string {
 			startY += 38
 
 			for _, item := range list {
-				cardH := 65
-				sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="2"/>`, startY, width-60, cardH))
-				label := item.Code
-				if item.Name != "" {
-					label = fmt.Sprintf("%-8s %s", item.Code, item.Name)
-				}
-				sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="16">%s</text>`, startY+30, label))
-
-				arrow := ""
-				if item.Change > 0 {
-					arrow = "^"
-				} else if item.Change < 0 {
-					arrow = "v"
-				}
-				priceStr := "--"
-				if item.Price > 0 {
-					priceStr = fmt.Sprintf("%.2f", item.Price)
-				}
-				chgStr := fmt.Sprintf("%s %+.2f (%+.2f%%)", arrow, item.Change, item.Pct)
-
-				if len(item.Prices) > 2 {
-					pts, _, _, _ := sparklinePoints(item.Prices, item.Code, 420, 45)
-					gx, gy := 300, startY+10
-					var shifted []string
-					for _, pt := range pts {
-						parts := strings.Split(pt, ",")
-						if len(parts) == 2 {
-							x := fmt.Sprintf("%.1f", mustParseFloat(parts[0])+float64(gx))
-							y := fmt.Sprintf("%.1f", mustParseFloat(parts[1])+float64(gy))
-							shifted = append(shifted, x+","+y)
-						}
-					}
-					sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="420" height="45" fill="none" stroke="black" stroke-width="1"/>`, gx, gy))
-					sb.WriteString(fmt.Sprintf(`<polyline fill="none" stroke="black" stroke-width="1.5" points="%s"/>`, strings.Join(shifted, " ")))
-				}
-
-				sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="22" font-weight="bold" text-anchor="end">%s</text>`, width-30, startY+28, priceStr))
-				sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="14" text-anchor="end">%s</text>`, width-30, startY+48, chgStr))
-				startY += cardH + 6
+				svgWriteCard(&sb, item, startY, width, true)
+				startY += 65 + 6
 				if startY > height-80 {
 					break
 				}
@@ -684,25 +641,7 @@ func renderScreenSVG(data []StockData, width, height int) string {
 				if startY > height-80 {
 					break
 				}
-				priceStr := "--"
-				if f.Price > 0 {
-					priceStr = fmt.Sprintf("%.2f", f.Price)
-				}
-				arrow := ""
-				if f.Change > 0 {
-					arrow = "^"
-				} else if f.Change < 0 {
-					arrow = "v"
-				}
-				chgStr := fmt.Sprintf("%s %+.2f (%+.2f%%)", arrow, f.Change, f.Pct)
-				label := f.Code
-				if f.Name != "" {
-					label = fmt.Sprintf("%-8s %s", f.Code, f.Name)
-				}
-				sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="65" fill="none" stroke="black" stroke-width="2"/>`, startY, width-60))
-				sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="16">%s</text>`, startY+30, label))
-				sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="22" font-weight="bold" text-anchor="end">%s</text>`, width-30, startY+28, priceStr))
-				sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="14" text-anchor="end">%s</text>`, width-30, startY+48, chgStr))
+				svgWriteCard(&sb, f, startY, width, false)
 				startY += 71
 			}
 		}
