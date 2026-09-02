@@ -61,19 +61,15 @@ func SetViewMode(mode string) {
 	}
 }
 
-// 退出应用并恢复 Kindle 原生桌面
+// 退出应用并恢复 Kindle 原生桌面 (共存模式, 不重启)
 func quitApp() {
 	log.Println("Exit requested. Restoring Kindle state and exiting...")
-	// 1. 释放触屏独占 (重新还给系统)
 	if grabbedDevFile != nil {
 		_, _, _ = syscall.Syscall(syscall.SYS_IOCTL, grabbedDevFile.Fd(), uintptr(EVIOCGRAB), 0)
 		grabbedDevFile.Close()
 	}
-	// 2. 唤醒暂停的 Java 桌面 (SIGCONT)
-	_ = exec.Command("killall", "-CONT", "cvm").Run()
-	// 3. 恢复防休眠属性
-	_ = exec.Command("lipc-set-prop", "-i", "com.lab126.powerd", "preventScreenSaver", "0").Run()
-	// 4. 唤醒 Kindle 原生主页并清屏重绘
+	EnableCoexistMode()
+	// 唤醒 Kindle 原生主页并清屏重绘
 	_ = exec.Command("lipc-set-prop", "com.lab126.appmgrd", "show", "app://com.lab126.booklet.home").Run()
 	eipsPath := "/usr/sbin/eips"
 	if _, err := os.Stat(eipsPath); err == nil {

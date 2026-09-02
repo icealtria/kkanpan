@@ -23,6 +23,10 @@ func main() {
 	SetViewMode(*initialView)
 	log.Printf("Starting kkanpan for Kindle KPW3 (ViewMode: %s)...", *initialView)
 
+	// 共存模式: 不杀 framework, 通过 pillow+awesome+wmctrl+statusbar 屏蔽状态栏 (KOReader 同款, 退出不重启)
+	DisableCoexistMode()
+	defer EnableCoexistMode()
+
 	data := refreshData()
 	log.Printf("Fetched %d stocks successfully", len(data))
 
@@ -30,6 +34,7 @@ func main() {
 		img := renderScreenImage(data, *width, *height)
 		_ = updateKindleScreen(img, true)
 		log.Println("Once mode completed.")
+		// once 模式也需要恢复 UI (defer 会执行)
 		return
 	}
 

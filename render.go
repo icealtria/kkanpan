@@ -7,7 +7,6 @@ import (
 	"image/draw"
 	"math"
 	"strings"
-	"time"
 )
 
 // sparkline 工具 — DRY: 归一化与固定开盘-收盘宽度
@@ -251,7 +250,6 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 	effectiveGroup, isAuto := GetEffectiveGroup(viewMode)
 
 	// 顶部 Header (加大字号适配 300ppi 墨水屏)
-	nowStr := time.Now().Format("2006-01-02 15:04:05")
 	modeTag := fmt.Sprintf("[%s]", viewMode)
 	if isAuto {
 		modeTag = fmt.Sprintf("[自动: %s]", effectiveGroup)
@@ -459,8 +457,11 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 		}
 	}
 
-	// 底部触控提示栏
-	DrawText(img, 30, height-40, "点击右上角 [X] 退出 | 点击顶部 Tab 切换视图 | "+nowStr, 20, color.Gray{Y: 100})
+	// 底部状态栏: 显示系统信息 (时间/WiFi/电量) + 触控提示
+	statusStr := FormatStatusBar()
+	drawLine(img, 30, height-58, width-30, height-58, 0, 1)
+	DrawText(img, 30, height-50, statusStr, 22, color.Black)
+	DrawText(img, 30, height-24, "点击右上角 [X] 退出 | 点击顶部 Tab 切换视图", 18, color.Gray{Y: 120})
 	return img
 }
 
@@ -472,7 +473,6 @@ func renderScreenSVG(data []StockData, width, height int) string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf(`<svg width="%d" height="%d" viewBox="0 0 %d %d" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">`, width, height, width, height))
 	sb.WriteString(`<rect width="100%" height="100%" fill="white"/>`)
-	nowStr := time.Now().Format("2006-01-02 15:04:05")
 
 	modeTag := fmt.Sprintf("[%s]", viewMode)
 	if isAuto {
@@ -676,7 +676,10 @@ func renderScreenSVG(data []StockData, width, height int) string {
 		}
 	}
 
-	sb.WriteString(fmt.Sprintf(`<text x="30" y="%d" font-family="monospace" font-size="16" fill="#666">TAP [X] TO EXIT | TAP TABS TO SWITCH | %s</text>`, height-28, nowStr))
+	statusStr := FormatStatusBar()
+	sb.WriteString(fmt.Sprintf(`<line x1="30" y1="%d" x2="%d" y2="%d" stroke="black" stroke-width="1"/>`, height-58, width-30, height-58))
+	sb.WriteString(fmt.Sprintf(`<text x="30" y="%d" font-family="monospace" font-size="18" font-weight="bold">%s</text>`, height-38, statusStr))
+	sb.WriteString(fmt.Sprintf(`<text x="30" y="%d" font-family="monospace" font-size="14" fill="#888">TAP [X] TO EXIT | TAP TABS TO SWITCH</text>`, height-16))
 	sb.WriteString(`</svg>`)
 	return sb.String()
 }
