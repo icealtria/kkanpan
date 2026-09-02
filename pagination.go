@@ -42,24 +42,45 @@ func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 	for _, d := range data {
 		groups[d.Group] = append(groups[d.Group], d)
 	}
+	style := GetStyleMode()
 	var blocks []block
 	if effectiveGroup == "" {
 		if !isAuto || len(appConfig.PinnedGroups) == 0 {
 			return nil
 		}
+		h := 103
+		if style == "large" {
+			h = 93
+		}
 		for _, pg := range appConfig.PinnedGroups {
-			blocks = appendGroup(blocks, pg, groups[pg], 103)
+			blocks = appendGroup(blocks, pg, groups[pg], h)
 		}
 		return blocks
 	}
 	if effectiveGroup != "ALL" && len(groups[effectiveGroup]) > 0 {
-		blocks = appendGroup(blocks, effectiveGroup, groups[effectiveGroup], 103)
+		if style == "large" {
+			// 恢复 5e7f0ae 之前的大卡逻辑
+			list := groups[effectiveGroup]
+			blocks = append(blocks, block{isHeader: true, group: effectiveGroup, h: 52, gap: 8})
+			cardH := 145
+			if len(list) <= 3 {
+				cardH = 175
+			} else if len(list) > 6 {
+				cardH = 110
+			}
+			for _, it := range list {
+				blocks = append(blocks, block{isHeader: false, group: effectiveGroup, data: it, h: cardH + 10, gap: 10})
+			}
+		} else {
+			blocks = appendGroup(blocks, effectiveGroup, groups[effectiveGroup], 103)
+		}
 		if isAuto {
+			ph := 93
 			for _, pg := range appConfig.PinnedGroups {
 				if pg == effectiveGroup {
 					continue
 				}
-				blocks = appendGroup(blocks, pg, groups[pg], 93)
+				blocks = appendGroup(blocks, pg, groups[pg], ph)
 			}
 		}
 	} else if effectiveGroup == "ALL" {

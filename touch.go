@@ -44,6 +44,9 @@ var (
 	viewModeMu       sync.RWMutex
 	triggerRefreshCh = make(chan bool, 1)
 	grabbedDevFile   *os.File
+
+	currentStyle = "normal" // normal | large
+	styleMu      sync.RWMutex
 )
 
 func GetViewMode() string {
@@ -70,6 +73,52 @@ func triggerPageRefresh() {
 	case triggerRefreshCh <- true:
 	default:
 	}
+}
+
+func GetStyleMode() string {
+	styleMu.RLock()
+	defer styleMu.RUnlock()
+	return currentStyle
+}
+
+func SetStyleMode(m string) {
+	if m != "normal" && m != "large" {
+		return
+	}
+	styleMu.Lock()
+	currentStyle = m
+	styleMu.Unlock()
+	ResetPage()
+	screenDiffer.ClearDiffCache()
+	select {
+	case triggerRefreshCh <- true:
+	default:
+	}
+}
+
+func NextStyleMode() string {
+	styleMu.Lock()
+	if currentStyle == "large" {
+		currentStyle = "normal"
+	} else {
+		currentStyle = "large"
+	}
+	m := currentStyle
+	styleMu.Unlock()
+	ResetPage()
+	screenDiffer.ClearDiffCache()
+	select {
+	case triggerRefreshCh <- true:
+	default:
+	}
+	return m
+}
+
+func StyleLabel(m string) string {
+	if m == "large" {
+		return "L"
+	}
+	return "S"
 }
 
 func quitApp() {
@@ -181,11 +230,18 @@ func startTouchListener(screenWidth, screenHeight int) {
 	handleTap := func(x, y int) {
 		log.Printf("Touch tap detected at (%d, %d)", x, y)
 
-		// 1. 右上角 [X] 关闭按钮判定 (区域加大，更好点击)
-		if x >= screenWidth-120 && y <= 75 {
-			log.Println("Close [X] button tapped!")
-			quitApp()
-			return
+		// 1. 右上角按钮区 (y<=65): [样式][X]
+		if y <= 65 {
+			if x >= screenWidth-95 && x <= screenWidth-10 {
+				log.Println("Close [X] button tapped!")
+				quitApp()
+				return
+			}
+			if x >= screenWidth-185 && x <= screenWidth-105 {
+				m := NextStyleMode()
+				log.Printf("Style button tapped -> %s", m)
+				return
+			}
 		}
 
 		// 2. 顶部 Tab 栏判定 (y: 60 ~ 135) — 动态 Tab

@@ -36,6 +36,21 @@ func startHTTPServer(host string, port int) {
 		}
 	})
 
+	http.HandleFunc("/style", func(w http.ResponseWriter, r *http.Request) {
+		if m := r.URL.Query().Get("mode"); m != "" {
+			SetStyleMode(m)
+		} else {
+			m := NextStyleMode()
+			log.Printf("Style switched to: %s", m)
+		}
+		ref := r.Header.Get("Referer")
+		if ref != "" {
+			http.Redirect(w, r, ref, 302)
+		} else {
+			http.Redirect(w, r, "/", 302)
+		}
+	})
+
 	http.HandleFunc("/exit", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Exiting kkanpan... Restoring Kindle system."))
 		go func() {

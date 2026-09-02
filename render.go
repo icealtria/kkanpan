@@ -430,6 +430,11 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 	DrawText(img, 30, 16, "KKANPAN", 32, color.Black)
 	DrawText(img, width-460, 20, modeTag, 24, color.Black)
 
+	styleLabel := StyleLabel(GetStyleMode())
+	drawRect(img, width-185, 10, 80, 46, 0, 2)
+	tw := MeasureText(styleLabel, 24)
+	DrawText(img, width-185+(80-tw)/2, 18, styleLabel, 24, color.Black)
+
 	drawRect(img, width-95, 10, 65, 46, 0, 3)
 	DrawText(img, width-72, 18, "X", 26, color.Black)
 
@@ -484,36 +489,91 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 		}
 		return false
 	}
+	style := GetStyleMode()
 	for _, b := range curBlocks {
 		if b.isHeader {
-			fillRect(img, 30, startY, width-60, 38, 0)
-			DrawText(img, 45, startY+8, "[ "+b.group+" ]", 22, color.White)
+			if style == "large" && b.group == effectiveGroup && effectiveGroup != "ALL" {
+				fillRect(img, 30, startY, width-60, 44, 0)
+				gTitle := fmt.Sprintf("=== %s ===", b.group)
+				DrawText(img, 45, startY+10, gTitle, 24, color.White)
+			} else {
+				fillRect(img, 30, startY, width-60, 38, 0)
+				DrawText(img, 45, startY+8, "[ "+b.group+" ]", 22, color.White)
+			}
 			startY += b.h
 			continue
 		}
 		item := b.data
+		isSingle := b.group == effectiveGroup && effectiveGroup != "ALL"
 		pinned := isPinnedGroup(b.group)
-		cardH := b.h - b.gap
-		drawRect(img, 30, startY, width-60, cardH, 0, 2)
-		nameStr := item.Name
-		if nameStr == "" {
-			nameStr = item.Code
+		if style == "large" && isSingle {
+			cardH := b.h - b.gap
+			drawRect(img, 30, startY, width-60, cardH, 0, 2)
+			nameStr := item.Name
+			if nameStr == "" {
+				nameStr = item.Code
+			}
+			DrawText(img, 45, startY+18, nameStr, 32, color.Black)
+			DrawText(img, 45, startY+62, item.Code, 20, color.Gray{Y: 100})
+			arrow := " "
+			if item.Change > 0 {
+				arrow = "▲"
+			} else if item.Change < 0 {
+				arrow = "▼"
+			}
+			priceStr := "--"
+			if item.Price > 0 {
+				priceStr = fmt.Sprintf("%.2f", item.Price)
+			}
+			chgStr := fmt.Sprintf("%s %+.2f (%+.2f%%)", arrow, item.Change, item.Pct)
+			chartW := width - 490
+			chartH := cardH - 30
+			if len(item.Prices) > 2 {
+				drawSparklineGraph(img, item.Prices, 210, startY+15, chartW, chartH, item.Code)
+			}
+			priceW := MeasureText(priceStr, 38)
+			chgW := MeasureText(chgStr, 24)
+			DrawText(img, width-45-priceW, startY+16, priceStr, 38, color.Black)
+			DrawText(img, width-45-chgW, startY+64, chgStr, 24, color.Black)
+			startY += b.h
+		} else if pinned {
+			cardH := b.h - b.gap
+			drawRect(img, 30, startY, width-60, cardH, 0, 2)
+			nameStr := item.Name
+			if nameStr == "" {
+				nameStr = item.Code
+			}
+			DrawText(img, 45, startY+14, nameStr, 26, color.Black)
+			DrawText(img, 45, startY+48, item.Code, 18, color.Gray{Y: 100})
+			priceStr, chgStr := stockStrings(item.Price, item.Change, item.Pct, false)
+			priceW := MeasureText(priceStr, 34)
+			chgW := MeasureText(chgStr, 20)
+			DrawText(img, width-45-priceW, startY+14, priceStr, 34, color.Black)
+			DrawText(img, width-45-chgW, startY+50, chgStr, 20, color.Black)
+			startY += b.h
+		} else {
+			cardH := b.h - b.gap
+			drawRect(img, 30, startY, width-60, cardH, 0, 2)
+			nameStr := item.Name
+			if nameStr == "" {
+				nameStr = item.Code
+			}
+			DrawText(img, 45, startY+14, nameStr, 26, color.Black)
+			DrawText(img, 45, startY+48, item.Code, 18, color.Gray{Y: 100})
+			priceStr, chgStr := stockStrings(item.Price, item.Change, item.Pct, false)
+			if !pinned && len(item.Prices) > 2 {
+				drawSparklineGraph(img, item.Prices, 240, startY+12, 440, 70, item.Code)
+			}
+			priceW := MeasureText(priceStr, 34)
+			chgW := MeasureText(chgStr, 20)
+			chgY := startY + 50
+			if !pinned {
+				chgY = startY + 52
+			}
+			DrawText(img, width-45-priceW, startY+14, priceStr, 34, color.Black)
+			DrawText(img, width-45-chgW, chgY, chgStr, 20, color.Black)
+			startY += b.h
 		}
-		DrawText(img, 45, startY+14, nameStr, 26, color.Black)
-		DrawText(img, 45, startY+48, item.Code, 18, color.Gray{Y: 100})
-		priceStr, chgStr := stockStrings(item.Price, item.Change, item.Pct, false)
-		if !pinned && len(item.Prices) > 2 {
-			drawSparklineGraph(img, item.Prices, 240, startY+12, 440, 70, item.Code)
-		}
-		priceW := MeasureText(priceStr, 34)
-		chgW := MeasureText(chgStr, 20)
-		chgY := startY + 50
-		if !pinned {
-			chgY = startY + 52
-		}
-		DrawText(img, width-45-priceW, startY+14, priceStr, 34, color.Black)
-		DrawText(img, width-45-chgW, chgY, chgStr, 20, color.Black)
-		startY += b.h
 	}
 	if totalPages > 1 {
 		indicator := fmt.Sprintf("%d / %d", curPage+1, totalPages)
@@ -548,8 +608,8 @@ func renderScreenSVG(data []StockData, width, height int) string {
 		modeTag = fmt.Sprintf("[AUTO: %s]", effectiveGroup)
 	}
 	sb.WriteString(fmt.Sprintf(`<text x="30" y="38" font-family="monospace" font-size="32" font-weight="bold">KKANPAN</text>`))
-	sb.WriteString(fmt.Sprintf(`<text x="%d" y="38" font-family="monospace" font-size="24" font-weight="bold" text-anchor="end">%s</text>`, width-90, modeTag))
-
+	sb.WriteString(fmt.Sprintf(`<text x="%d" y="38" font-family="monospace" font-size="24" font-weight="bold" text-anchor="end">%s</text>`, width-270, modeTag))
+	sb.WriteString(fmt.Sprintf(`<a href="/style"><rect x="%d" y="10" width="80" height="46" fill="white" stroke="black" stroke-width="2"/><text x="%d" y="34" font-family="monospace" font-size="20" font-weight="bold" text-anchor="middle">%s</text></a>`, width-185, width-145, StyleLabel(GetStyleMode())))
 	sb.WriteString(fmt.Sprintf(`<a href="/exit"><rect x="%d" y="10" width="65" height="46" fill="white" stroke="black" stroke-width="3"/><text x="%d" y="34" font-family="monospace" font-size="20" font-weight="bold" text-anchor="middle">X</text></a>`, width-95, width-62))
 
 	modes := GetTabModes()
@@ -583,11 +643,17 @@ func renderScreenSVG(data []StockData, width, height int) string {
 	if totalPages > 0 && curPage < totalPages {
 		curBlocks = pages[curPage]
 	}
+	style := GetStyleMode()
 	startY := 142
 	for _, b := range curBlocks {
 		if b.isHeader {
-			sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="38" fill="black"/>`, startY, width-60))
-			sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="22" fill="white">[ %s ]</text>`, startY+24, b.group))
+			if style == "large" && b.group == effectiveGroup && effectiveGroup != "ALL" {
+				sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="44" fill="black"/>`, startY, width-60))
+				sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="22" fill="white">=== %s ===</text>`, startY+27, b.group))
+			} else {
+				sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="38" fill="black"/>`, startY, width-60))
+				sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="22" fill="white">[ %s ]</text>`, startY+24, b.group))
+			}
 			startY += b.h
 			continue
 		}
@@ -601,7 +667,38 @@ func renderScreenSVG(data []StockData, width, height int) string {
 				}
 			}
 		}
-		svgWriteCard(&sb, b.data, startY, width, cardH, !isPinned)
+		isSingle := b.group == effectiveGroup && effectiveGroup != "ALL"
+		if style == "large" && isSingle {
+			// 大卡 SVG: 放大字体+大图
+			nameStr := b.data.Name
+			if nameStr == "" {
+				nameStr = b.data.Code
+			}
+			sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="2"/>`, startY, width-60, cardH))
+			sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="28">%s</text>`, startY+30, nameStr))
+			sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="16" fill="#666">%s</text>`, startY+52, b.data.Code))
+			priceStr, chgStr := stockStrings(b.data.Price, b.data.Change, b.data.Pct, true)
+			if len(b.data.Prices) > 2 {
+				pts, _, _, _ := sparklinePoints(b.data.Prices, b.data.Code, width-490, cardH-30)
+				gx, gy := 210, startY+15
+				shifted := make([]string, 0, len(pts))
+				for _, pt := range pts {
+					parts := strings.Split(pt, ",")
+					if len(parts) == 2 {
+						xv, _ := strconv.ParseFloat(parts[0], 64)
+						yv, _ := strconv.ParseFloat(parts[1], 64)
+						shifted = append(shifted, fmt.Sprintf("%.1f,%.1f", xv+float64(gx), yv+float64(gy)))
+					}
+				}
+				sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="1"/>`, gx, gy, width-490, cardH-30))
+				sb.WriteString(fmt.Sprintf(`<polyline fill="none" stroke="black" stroke-width="1.5" points="%s"/>`, strings.Join(shifted, " ")))
+			}
+			sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="28" font-weight="bold" text-anchor="end">%s</text>`, width-45, startY+32, priceStr))
+			sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="18" text-anchor="end">%s</text>`, width-45, startY+58, chgStr))
+		} else {
+			withSparkline := !isPinned
+			svgWriteCard(&sb, b.data, startY, width, cardH, withSparkline)
+		}
 		startY += b.h
 	}
 
