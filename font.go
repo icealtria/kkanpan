@@ -18,14 +18,13 @@ import (
 )
 
 var (
-	parsedFont    *sfnt.Font
-	fontFaceMap   = make(map[int]font.Face)
-	measureCache  = make(map[string]int)
-	fontMu        sync.RWMutex
-	fontInitOnce  sync.Once
+	parsedFont   *sfnt.Font
+	fontFaceMap  = make(map[int]font.Face)
+	measureCache = make(map[string]int)
+	fontMu       sync.RWMutex
+	fontInitOnce sync.Once
 )
 
-// 初始化字体：按优先级寻找中文字体
 func InitFont() {
 	fontInitOnce.Do(func() {
 		candidates := []string{
@@ -57,7 +56,6 @@ func InitFont() {
 			"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
 		}
 
-		// 遍历 /mnt/us/fonts 目录下的所有字体文件
 		if entries, err := os.ReadDir("/mnt/us/fonts"); err == nil {
 			for _, e := range entries {
 				ext := strings.ToLower(filepath.Ext(e.Name()))
@@ -119,7 +117,6 @@ func getFontFace(size int) font.Face {
 	return face
 }
 
-// 绘制文字：自动支持中文 TrueType 矢量渲染与点阵 fallback
 func DrawText(dst draw.Image, x, y int, text string, size int, col color.Color) int {
 	InitFont()
 	face := getFontFace(size)
@@ -139,7 +136,6 @@ func DrawText(dst draw.Image, x, y int, text string, size int, col color.Color) 
 		return d.Dot.X.Ceil() - x
 	}
 
-	// Fallback to bitmap font
 	if grayImg, ok := dst.(*image.Gray); ok {
 		scale := size / 16
 		if scale < 1 {

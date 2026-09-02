@@ -48,7 +48,6 @@ func initClients() {
 var cacheTTL int64 = 55
 var qtRe = regexp.MustCompile(`v_(\w+)="([^"]*)"`)
 
-// neededStocks 按当前 Tab 只返回需要拉取的配置 (AUTO 未命中则仅常驻组)
 func neededStocks() []StockConfig {
 	all := loadStocks()
 	mode := GetViewMode()
@@ -57,7 +56,6 @@ func neededStocks() []StockConfig {
 		if !isAuto || len(appConfig.PinnedGroups) == 0 {
 			return nil
 		}
-		// AUTO 空档期仍显示常驻组
 		want := make(map[string]bool, len(appConfig.PinnedGroups))
 		for _, pg := range appConfig.PinnedGroups {
 			want[pg] = true
@@ -168,7 +166,6 @@ func fetchYahoo(code string) ([]float64, float64, float64) {
 	return prices, price, prev
 }
 
-// 纯核: gtimg 分时行 "09:30 12.34 ..." -> price， equational: map parse . filter (>0?_) 
 func parseGtimgRows(rows []string, filterZero bool) []float64 {
 	prices := make([]float64, 0, len(rows))
 	for _, row := range rows {
@@ -289,7 +286,6 @@ type chartResult struct {
 
 func refreshData() []StockData {
 	configs := neededStocks()
-	// 日志: 按需拉取前后对比 (全量 ~14 -> 单 Tab 3~6)
 	if len(configs) != len(loadStocks()) {
 		eff, _ := GetEffectiveGroup(GetViewMode())
 		log.Printf("[fetch] View %s: fetching %d/%d stocks", eff, len(configs), len(loadStocks()))
@@ -367,7 +363,6 @@ func refreshData() []StockData {
 		if !isChart {
 			prices = nil
 		} else {
-			// 纯核: extend h = takeLast 1440 (h ++ [price|price>0])
 			histMutex.Lock()
 			h := priceHist[code]
 			if price > 0 {
@@ -403,7 +398,7 @@ func refreshData() []StockData {
 func getData() []StockData {
 	needed := neededStocks()
 	if len(needed) == 0 {
-		return nil // AUTO 未命中 -> 空
+		return nil
 	}
 	needSet := make(map[string]bool, len(needed))
 	for _, c := range needed {
@@ -416,7 +411,6 @@ func getData() []StockData {
 		ttl = appConfig.CacheTTL
 	}
 	if now-lastFetch <= ttl && len(cachedData) > 0 {
-		// 检查缓存是否覆盖当前 Tab 所需代码, 否则穿透刷新 (切 Tab 后缓存未命中)
 		cachedCodes := make(map[string]bool, len(cachedData))
 		for _, d := range cachedData {
 			cachedCodes[d.Code] = true

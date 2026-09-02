@@ -71,7 +71,6 @@ func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 }
 
 func paginate(data []StockData, width, height int) [][]block {
-	// width 未使用, 保留以对齐 render 签名, 未来可按宽度分栏
 	_ = width
 	viewMode := GetViewMode()
 	eff, isAuto := GetEffectiveGroup(viewMode)
@@ -150,7 +149,6 @@ func PrevPage() bool {
 	return false
 }
 
-// clampPage 保证 currentPage 在 [0,total-1]
 func clampPage(total int) int {
 	pageMu.Lock()
 	defer pageMu.Unlock()
@@ -167,7 +165,6 @@ func clampPage(total int) int {
 	return currentPage
 }
 
-// neededStocksData 仅用于手势时估算总页数 (无缓存时用配置构造 dummy StockData)
 func neededStocksData() []StockData {
 	cfgs := neededStocks()
 	out := make([]StockData, len(cfgs))

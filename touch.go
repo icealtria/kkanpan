@@ -40,7 +40,7 @@ const (
 )
 
 var (
-	currentViewMode = "AUTO" // AUTO, ALL or any group from stocks.json
+	currentViewMode  = "AUTO" // AUTO, ALL or any group from stocks.json
 	viewModeMu       sync.RWMutex
 	triggerRefreshCh = make(chan bool, 1)
 	grabbedDevFile   *os.File
@@ -72,7 +72,6 @@ func triggerPageRefresh() {
 	}
 }
 
-// 退出应用并恢复 Kindle 原生桌面 (共存模式, 不重启)
 func quitApp() {
 	log.Println("Exit requested. Restoring Kindle state and exiting...")
 	if grabbedDevFile != nil {
@@ -214,7 +213,6 @@ func startTouchListener(screenWidth, screenHeight int) {
 				return
 			}
 			if x > screenWidth*2/3 {
-				// 计算总页数 (基于缓存数据)
 				var total int
 				cacheMutex.RLock()
 				if len(cachedData) > 0 {
@@ -339,7 +337,6 @@ func startTouchListener(screenWidth, screenHeight int) {
 				if curX == 0 && curY == 0 {
 					curX, curY = startX, startY
 				}
-				// 优先判定滑动翻页 (水平滑动 >80px)
 				if !startTime.IsZero() {
 					if handleSwipe(startX, startY, curX, curY, time.Since(startTime)) {
 						startX, startY = 0, 0

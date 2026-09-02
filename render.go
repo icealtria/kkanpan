@@ -10,7 +10,6 @@ import (
 	"strings"
 )
 
-// sparkline 工具 — DRY: 归一化与固定开盘-收盘宽度
 func sparklinePoints(prices []float64, code string, w, h int) (pts []string, minVal, maxVal, rng float64) {
 	if len(prices) < 2 {
 		return nil, 0, 0, 1
@@ -29,7 +28,6 @@ func sparklinePoints(prices []float64, code string, w, h int) (pts []string, min
 		rng = 1
 	}
 	denom := float64(len(prices) - 1)
-	// 预分配减少 fmt开销
 	pts = make([]string, 0, len(prices))
 	buf := make([]byte, 0, 32)
 	for i, p := range prices {
@@ -56,7 +54,6 @@ func svgSparkline(prices []float64, w, h int, code string) string {
 </svg>`, w, h, w, h, w, h, poly)
 }
 
-// 纯核: stock 显示字符串 (map fusion: price/change/pct -> arrow+priceStr+chgStr)
 func stockStrings(price, change, pct float64, isSVG bool) (priceStr, chgStr string) {
 	if price > 0 {
 		priceStr = fmt.Sprintf("%.2f", price)
@@ -121,7 +118,6 @@ func svgWriteCard(sb *strings.Builder, item StockData, startY, width int, withSp
 	sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="14" text-anchor="end">%s</text>`, width-30, startY+48, chgStr))
 }
 
-// E-Ink 位图引擎 — Kindle eips 用 (inline thickPixel 避免闭包分配)
 func drawLine(img *image.Gray, x0, y0, x1, y1 int, col uint8, width int) {
 	dx := int(math.Abs(float64(x1 - x0)))
 	dy := int(math.Abs(float64(y1 - y0)))
@@ -356,7 +352,6 @@ func drawChar(img *image.Gray, x, y int, ch rune, scale int, col uint8) int {
 					if baseX+scale <= 0 {
 						continue
 					}
-					// 左裁剪
 					start := -baseX
 					for sx := start; sx < scale; sx++ {
 						pix[off+sx] = col
@@ -414,7 +409,6 @@ func drawSparklineGraph(img *image.Gray, prices []float64, x, y, w, h int, code 
 	}
 }
 
-// 渲染 E-Ink 图像，支持右上角 [X] 关闭按钮与顶部 Tab
 func renderScreenImage(data []StockData, width, height int) *image.Gray {
 	img := image.NewGray(image.Rect(0, 0, width, height))
 	draw.Draw(img, img.Bounds(), &image.Uniform{color.Gray{Y: 255}}, image.Point{}, draw.Src)
@@ -422,7 +416,6 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 	viewMode := GetViewMode()
 	effectiveGroup, isAuto := GetEffectiveGroup(viewMode)
 
-	// 顶部 Header (加大字号适配 300ppi 墨水屏)
 	modeTag := fmt.Sprintf("[%s]", viewMode)
 	if isAuto {
 		modeTag = fmt.Sprintf("[AUTO: %s]", effectiveGroup)
@@ -430,11 +423,9 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 	DrawText(img, 30, 16, "KKANPAN", 32, color.Black)
 	DrawText(img, width-460, 20, modeTag, 24, color.Black)
 
-	// 右上角 [X] 退出按钮 (加大触控区域 65x46)
 	drawRect(img, width-95, 10, 65, 46, 0, 3)
 	DrawText(img, width-72, 18, "X", 26, color.Black)
 
-	// 绘制触控 Tab 栏 (动态, 非硬编码)
 	modes := GetTabModes()
 	tabs := make([]struct{ Key, Label string }, len(modes))
 	for i, m := range modes {
@@ -467,7 +458,6 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 
 	drawLine(img, 30, 128, width-30, 128, 0, 3)
 
-	// 分页渲染: 超出部分留到下一页 (手势翻页)
 	pages := paginate(data, width, height)
 	totalPages := len(pages)
 	curPage := clampPage(totalPages)
@@ -476,7 +466,6 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 		curBlocks = pages[curPage]
 	}
 	startY := 142
-	// 辅助: 判断是否 pinned 组
 	isPinnedGroup := func(g string) bool {
 		if !isAuto || g == effectiveGroup {
 			return false
@@ -519,7 +508,6 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 		DrawText(img, width-45-chgW, chgY, chgStr, 20, color.Black)
 		startY += b.h
 	}
-	// 页码指示 (多页时显示在分隔线上方居中, 上下翻页直觉)
 	if totalPages > 1 {
 		indicator := fmt.Sprintf("%d / %d", curPage+1, totalPages)
 		if curPage > 0 {
@@ -532,7 +520,6 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 		DrawText(img, (width-iw)/2, height-40, indicator, 18, color.Gray{Y: 80})
 	}
 
-	// 底部状态栏: 左侧提示 + 右侧时间电量同一行
 	statusStr := FormatStatusBar()
 	drawLine(img, 30, height-58, width-30, height-58, 0, 1)
 	DrawText(img, 30, height-24, "Swipe H: switch Tab | Swipe V: flip | Tap [X] exit", 18, color.Gray{Y: 120})
@@ -541,7 +528,6 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 	return img
 }
 
-// 渲染 SVG 矢量图
 func renderScreenSVG(data []StockData, width, height int) string {
 	viewMode := GetViewMode()
 	effectiveGroup, isAuto := GetEffectiveGroup(viewMode)
@@ -557,10 +543,8 @@ func renderScreenSVG(data []StockData, width, height int) string {
 	sb.WriteString(fmt.Sprintf(`<text x="30" y="38" font-family="monospace" font-size="26" font-weight="bold">KKANPAN - KPW3</text>`))
 	sb.WriteString(fmt.Sprintf(`<text x="%d" y="38" font-family="monospace" font-size="20" font-weight="bold" text-anchor="end">%s</text>`, width-90, modeTag))
 
-	// 右上角 [X] 关闭按钮
 	sb.WriteString(fmt.Sprintf(`<a href="/exit"><rect x="%d" y="10" width="45" height="34" fill="white" stroke="black" stroke-width="2"/><text x="%d" y="34" font-family="monospace" font-size="20" font-weight="bold" text-anchor="middle">X</text></a>`, width-75, width-52))
 
-	// Tab 栏 (动态)
 	modes := GetTabModes()
 	tabs := make([]struct{ Key, Label string }, len(modes))
 	for i, m := range modes {
@@ -650,7 +634,6 @@ func renderScreenSVG(data []StockData, width, height int) string {
 	statusStr := FormatStatusBar()
 	sb.WriteString(fmt.Sprintf(`<line x1="30" y1="%d" x2="%d" y2="%d" stroke="black" stroke-width="1"/>`, height-58, width-30, height-58))
 	sb.WriteString(fmt.Sprintf(`<text x="30" y="%d" font-family="monospace" font-size="14" fill="#888">TAP [X] TO EXIT | TAP TABS TO SWITCH</text>`, height-16))
-	// 右下角时间电量与提示同一行
 	sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="14" font-weight="bold" text-anchor="end">%s</text>`, width-30, height-16, statusStr))
 	sb.WriteString(`</svg>`)
 	return sb.String()

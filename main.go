@@ -38,16 +38,13 @@ func main() {
 		img := renderScreenImage(data, *width, *height)
 		_ = updateKindleScreen(img, true)
 		log.Println("Once mode completed.")
-		// once 模式也需要恢复 UI (defer 会执行)
 		return
 	}
 
-	// 默认关闭 HTTP，仅在显式指定 -http 时开启
 	if *web {
 		go startHTTPServer(*host, *port)
 	}
 
-	// 启动 Kindle 触控事件监听 (Tab 切换与右上角 [X] 关闭)
 	go startTouchListener(*width, *height)
 
 	if *eips {
@@ -55,7 +52,6 @@ func main() {
 		ticker := time.NewTicker(time.Duration(*interval) * time.Second)
 		defer ticker.Stop()
 
-		// 首次刷屏
 		img := renderScreenImage(data, *width, *height)
 		_ = updateKindleScreen(img, true)
 
@@ -70,7 +66,6 @@ func main() {
 					log.Printf("Screen update error: %v", err)
 				}
 			case <-triggerRefreshCh:
-				// 用户触控切换 Tab 或点击刷新，立即响应重绘
 				// 切 Tab 后布局完全不同，清除 diff 缓存做全屏刷新
 				log.Println("Instant refresh triggered by user interaction...")
 				screenDiffer.ClearDiffCache()

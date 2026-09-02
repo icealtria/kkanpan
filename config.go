@@ -80,7 +80,6 @@ func loadStocks() []StockConfig {
 	return nil
 }
 
-// GetAllGroups 返回 stocks.json 中去重后的分组, 保持首次出现顺序
 func GetAllGroups() []string {
 	seen := make(map[string]bool)
 	var out []string
@@ -93,7 +92,6 @@ func GetAllGroups() []string {
 	return out
 }
 
-// GetTabModes 返回 Tab 栏完整列表: AUTO(按需) + 分组 + ALL
 func GetTabModes() []string {
 	groups := GetAllGroups()
 	hasAuto := len(appConfig.AutoRules) > 0 || len(appConfig.PinnedGroups) > 0
@@ -106,7 +104,6 @@ func GetTabModes() []string {
 	return tabs
 }
 
-// GetDefaultView 返回配置文件中的默认视图, 未配置则回落 AUTO 或首分组
 func GetDefaultView() string {
 	if appConfig.DefaultView != "" {
 		return appConfig.DefaultView

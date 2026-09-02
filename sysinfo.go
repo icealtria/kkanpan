@@ -10,7 +10,6 @@ import (
 	"time"
 )
 
-// KindleSystemInfo 保存从系统读取的设备状态
 type KindleSystemInfo struct {
 	BatteryLevel string // e.g. "85"
 	IsCharging   bool
@@ -24,7 +23,7 @@ var (
 	sysInfoUpdated int64
 )
 
-// GetKindleSystemInfo 返回缓存的系统信息，最多每 30 秒刷新一次
+// 30s cache — lipc-get-prop 耗电, 避免频繁唤醒
 func GetKindleSystemInfo() KindleSystemInfo {
 	sysInfoMu.RLock()
 	now := time.Now().Unix()
@@ -47,17 +46,14 @@ func readKindleSystemInfo() KindleSystemInfo {
 		Time: time.Now().Format("15:04"),
 	}
 
-	// 读取电池电量
 	info.BatteryLevel = lipcGet("com.lab126.powerd", "battLevel")
 	if info.BatteryLevel == "" {
 		info.BatteryLevel = "--"
 	}
 
-	// 读取充电状态
 	charging := lipcGet("com.lab126.powerd", "isCharging")
 	info.IsCharging = (charging == "1")
 
-	// 读取 WiFi 信号强度
 	signal := lipcGet("com.lab126.wifid", "signalStrength")
 	if signal == "" {
 		// 尝试读取连接状态判断 WiFi 是否开启
@@ -74,7 +70,6 @@ func readKindleSystemInfo() KindleSystemInfo {
 	return info
 }
 
-// lipcGet 执行 lipc-get-prop 命令并返回 trim 后的结果
 func lipcGet(service, prop string) string {
 	out, err := exec.Command("lipc-get-prop", service, prop).Output()
 	if err != nil {
@@ -83,7 +78,6 @@ func lipcGet(service, prop string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// signalToBar 将信号强度数值转为可读的信号条表示
 func signalToBar(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || raw == "0" {
@@ -139,14 +133,14 @@ func FormatStatusBar() string {
 
 var (
 	kindlePillowHardDisabled bool
-	kindleAwesomeStopped   bool
-	kindleCvmStopped       bool
-	kindleVolumdStopped    bool
-	kindleStatusbarStopped bool
-	kindleWmctrlUsed       bool
-	kindleTitlebarGeom     string
-	kindleInitType         string // "upstart" | "sysv"
-	kindleFWVersion        string
+	kindleAwesomeStopped     bool
+	kindleCvmStopped         bool
+	kindleVolumdStopped      bool
+	kindleStatusbarStopped   bool
+	kindleWmctrlUsed         bool
+	kindleTitlebarGeom       string
+	kindleInitType           string // "upstart" | "sysv"
+	kindleFWVersion          string
 )
 
 func init() {
@@ -358,7 +352,6 @@ func getTitlebarGeometry() string {
 		return ""
 	}
 	geom := strings.TrimSpace(string(out))
-	// 去掉最后的 ,1 保留前5段
 	if strings.Count(geom, ",") == 4 {
 		return geom
 	}
@@ -368,10 +361,8 @@ func getTitlebarGeometry() string {
 func findWmctrl() string {
 	for _, p := range []string{"/mnt/us/extensions/kkanpan/bin/wmctrl", "/usr/bin/wmctrl", "./wmctrl", "wmctrl"} {
 		if _, err := exec.Command("sh", "-c", "test -x "+p).Output(); err == nil {
-			// test -x 成功返回0
 			return p
 		}
-		// 更直接用 stat
 		if out, _ := exec.Command("sh", "-c", "command -v "+p+" 2>/dev/null").Output(); len(strings.TrimSpace(string(out))) > 0 {
 			return strings.TrimSpace(string(out))
 		}
@@ -384,12 +375,9 @@ func wmctrlCmd(args ...string) string {
 	if wm == "" {
 		return "false"
 	}
-	// 构造带引号的命令
 	quoted := wm
 	for _, a := range args {
 		quoted += " '" + strings.ReplaceAll(a, "'", "'\\''") + "'"
 	}
 	return quoted
 }
-
-
