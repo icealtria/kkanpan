@@ -7,23 +7,12 @@ var (
 	currentPage int
 )
 
-// pagination helpers — KISS: 按可用高度切块, 超出即新页
-
 type block struct {
 	isHeader bool
 	group    string
 	data     StockData
-	h        int // 高度含 gap
+	h        int
 	gap      int
-}
-
-func pageHeight(height int) int {
-	// startY 142 到 height-100 之间的可用高度 (与 render.go 一致)
-	h := height - 142 - 100
-	if h < 200 {
-		h = 200
-	}
-	return h
 }
 
 func appendGroup(blocks []block, group string, list []StockData, cardH int) []block {
@@ -54,12 +43,27 @@ func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 	}
 	style := GetStyleMode()
 	var blocks []block
-	if effectiveGroup == "" {
-		return nil
-	}
 	if effectiveGroup == "ALL" {
 		for _, gName := range GetAllGroups() {
-			blocks = appendGroup(blocks, gName, groups[gName], 103)
+			list := groups[gName]
+			if len(list) == 0 {
+				continue
+			}
+			if style == "large" {
+				n := len(list)
+				cardH := 145
+				if n <= 3 {
+					cardH = 175
+				} else if n > 6 {
+					cardH = 110
+				}
+				blocks = append(blocks, block{isHeader: true, group: gName, h: 44, gap: 6})
+				for _, it := range list {
+					blocks = append(blocks, block{isHeader: false, group: gName, data: it, h: cardH + 10, gap: 10})
+				}
+			} else {
+				blocks = appendGroup(blocks, gName, list, 103)
+			}
 		}
 		return blocks
 	}
@@ -74,7 +78,13 @@ func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 				continue
 			}
 			if style == "large" {
-				cardH := largeCardH(len(list))
+				n := len(list)
+				cardH := 145
+				if n <= 3 {
+					cardH = 175
+				} else if n > 6 {
+					cardH = 110
+				}
 				blocks = append(blocks, block{isHeader: true, group: g, h: 44, gap: 6})
 				for _, it := range list {
 					blocks = append(blocks, block{isHeader: false, group: g, data: it, h: cardH + 10, gap: 10})
@@ -85,43 +95,49 @@ func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 		}
 		return blocks
 	}
-	if len(groups[effectiveGroup]) > 0 {
-		if style == "large" {
-			cardH := largeCardH(len(groups[effectiveGroup]))
-			blocks = append(blocks, block{isHeader: true, group: effectiveGroup, h: 44, gap: 6})
-			for _, it := range groups[effectiveGroup] {
-				blocks = append(blocks, block{isHeader: false, group: effectiveGroup, data: it, h: cardH + 10, gap: 10})
-			}
-		} else {
-			blocks = appendGroup(blocks, effectiveGroup, groups[effectiveGroup], 103)
+	list := groups[effectiveGroup]
+	if len(list) == 0 {
+		return blocks
+	}
+	if style == "large" {
+		n := len(list)
+		cardH := 145
+		if n <= 3 {
+			cardH = 175
+		} else if n > 6 {
+			cardH = 110
 		}
+		blocks = append(blocks, block{isHeader: true, group: effectiveGroup, h: 44, gap: 6})
+		for _, it := range list {
+			blocks = append(blocks, block{isHeader: false, group: effectiveGroup, data: it, h: cardH + 10, gap: 10})
+		}
+	} else {
+		blocks = appendGroup(blocks, effectiveGroup, list, 103)
 	}
 	return blocks
 }
 
 func paginate(data []StockData, width, height int) [][]block {
 	_ = width
-	viewMode := GetViewMode()
-	eff, isAuto := GetEffectiveGroup(viewMode)
+	eff, isAuto := GetEffectiveGroup(GetViewMode())
 	blocks := buildBlocks(data, eff, isAuto)
-	ph := pageHeight(height)
+	ph := height - 142 - 70
+	if ph < 200 {
+		ph = 200
+	}
 	var pages [][]block
 	var cur []block
 	curH := 0
 	for i, b := range blocks {
-		// 避免 header 孤悬在页尾 (header 是该页最后一块且下一块是同组 card)
-		if b.isHeader && curH+b.h > ph && curH > 0 {
+		if b.isHeader && curH+b.h-b.gap > ph && curH > 0 {
 			pages = append(pages, cur)
 			cur = nil
 			curH = 0
 		}
-		if curH+b.h > ph && curH > 0 {
-			// header 孤悬检查: 若当前块是 card 且上一块是 header 且 header 单独占页尾
-			// 已在上一分支处理, 这里仅切页
+		if curH+b.h-b.gap > ph && curH > 0 {
 			pages = append(pages, cur)
 			cur = nil
 			curH = 0
-			// 跨页续组无需重复 header, 直接续 card
 			_ = i
 		}
 		cur = append(cur, b)

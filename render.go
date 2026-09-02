@@ -487,7 +487,7 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 			continue
 		}
 		item := b.data
-		if style == "large" && effectiveGroup != "ALL" {
+		if style == "large" {
 			cardH := b.h - b.gap
 			drawRect(img, 30, startY, width-60, cardH, 0, 2)
 			nameStr := item.Name
@@ -615,7 +615,7 @@ func renderScreenSVG(data []StockData, width, height int) string {
 			continue
 		}
 		cardH := b.h - b.gap
-		if style == "large" && effectiveGroup != "ALL" {
+		if style == "large" {
 			// 大卡 SVG: 放大字体+大图
 			nameStr := b.data.Name
 			if nameStr == "" {

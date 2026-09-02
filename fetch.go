@@ -52,13 +52,13 @@ func neededStocks() []StockConfig {
 	all := loadStocks()
 	mode := GetViewMode()
 	eff, isAuto := GetEffectiveGroup(mode)
-	if eff == "" {
-		return nil
-	}
 	if eff == "ALL" {
 		return all
 	}
 	if !isAuto {
+		if eff == "" {
+			return nil
+		}
 		var out []StockConfig
 		for _, c := range all {
 			if c.Group == eff {
