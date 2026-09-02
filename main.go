@@ -18,6 +18,8 @@ func main() {
 	initialView := flag.String("view", "AUTO", "初始视图模式 (AUTO, A股, 美股, 期货, 全部)")
 	flag.Parse()
 
+	appConfig = loadAppConfig()
+	initClients()
 	SetViewMode(*initialView)
 	log.Printf("Starting kkanpan for Kindle KPW3 (ViewMode: %s)...", *initialView)
 

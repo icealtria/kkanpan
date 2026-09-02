@@ -68,7 +68,7 @@ func drawLine(img *image.Gray, x0, y0, x1, y1 int, col uint8, width int) {
 	setThickPixel := func(cx, cy int) {
 		for ox := -width / 2; ox <= width/2; ox++ {
 			for oy := -width / 2; oy <= width/2; oy++ {
-				px, py := cx + ox, cy + oy
+				px, py := cx+ox, cy+oy
 				if px >= 0 && px < img.Rect.Dx() && py >= 0 && py < img.Rect.Dy() {
 					img.SetGray(px, py, color.Gray{Y: col})
 				}
@@ -256,7 +256,7 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 	if isAuto {
 		modeTag = fmt.Sprintf("[自动: %s]", effectiveGroup)
 	}
-	DrawText(img, 30, 16, "KKANPAN 看盘", 32, color.Black)
+	DrawText(img, 30, 16, "KKANPAN", 32, color.Black)
 	DrawText(img, width-460, 20, modeTag, 24, color.Black)
 
 	// 右上角 [X] 退出按钮 (加大触控区域 65x46)
@@ -313,7 +313,7 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 	if effectiveGroup != "全部" && len(groups[effectiveGroup]) > 0 {
 		list := groups[effectiveGroup]
 		fillRect(img, 30, startY, width-60, 44, 0)
-		gTitle := fmt.Sprintf("=== %s 专属走势 (%d 只自选) ===", effectiveGroup, len(list))
+		gTitle := fmt.Sprintf("=== %s ===", effectiveGroup)
 		DrawText(img, 45, startY+10, gTitle, 24, color.White)
 		startY += 52
 
@@ -415,11 +415,17 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 		}
 	}
 
-	// ponytail: AUTO 模式期货常驻卡片 (加大高度与字号)
-	if isAuto && effectiveGroup != "全部" && effectiveGroup != "期货" {
-		if futs, ok := groups["期货"]; ok && len(futs) > 0 {
+	if isAuto && effectiveGroup != "全部" {
+		for _, pg := range appConfig.PinnedGroups {
+			if pg == effectiveGroup {
+				continue
+			}
+			futs, ok := groups[pg]
+			if !ok || len(futs) == 0 {
+				continue
+			}
 			fillRect(img, 30, startY, width-60, 38, 0)
-			DrawText(img, 45, startY+8, "[ 期货 ]", 22, color.White)
+			DrawText(img, 45, startY+8, "[ "+pg+" ]", 22, color.White)
 			startY += 44
 			for _, f := range futs {
 				if startY > height-100 {
@@ -630,10 +636,17 @@ func renderScreenSVG(data []StockData, width, height int) string {
 		}
 	}
 
-	if isAuto && effectiveGroup != "全部" && effectiveGroup != "期货" {
-		if futs, ok := groups["期货"]; ok && len(futs) > 0 {
+	if isAuto && effectiveGroup != "全部" {
+		for _, pg := range appConfig.PinnedGroups {
+			if pg == effectiveGroup {
+				continue
+			}
+			futs, ok := groups[pg]
+			if !ok || len(futs) == 0 {
+				continue
+			}
 			sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="32" fill="black"/>`, startY, width-60))
-			sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="16" fill="white">[ FUTURES ]</text>`, startY+22))
+			sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="16" fill="white">[ %s ]</text>`, startY+22, pg))
 			startY += 38
 			for _, f := range futs {
 				if startY > height-80 {

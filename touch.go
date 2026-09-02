@@ -7,6 +7,8 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -81,32 +83,52 @@ func quitApp() {
 	os.Exit(0)
 }
 
+func parseHM(s string) int {
+	parts := strings.Split(s, ":")
+	if len(parts) != 2 {
+		return 0
+	}
+	h, _ := strconv.Atoi(parts[0])
+	m, _ := strconv.Atoi(parts[1])
+	return h*60 + m
+}
+
+func matchRule(now time.Time, r AutoRule) bool {
+	if len(r.Weekdays) > 0 {
+		wd := int(now.Weekday())
+		matched := false
+		for _, w := range r.Weekdays {
+			if w == wd {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	start := parseHM(r.Start)
+	end := parseHM(r.End)
+	cur := now.Hour()*60 + now.Minute()
+	if start <= end {
+		return cur >= start && cur <= end
+	}
+	return cur >= start || cur <= end
+}
+
 func GetEffectiveGroup(mode string) (groupName string, isAuto bool) {
 	if mode != "AUTO" && mode != "" {
 		return mode, false
 	}
+	if len(appConfig.AutoRules) == 0 {
+		return "全部", true
+	}
 	loc := time.FixedZone("CST", 8*3600)
 	now := time.Now().In(loc)
-	weekday := now.Weekday()
-	hour := now.Hour()
-	minute := now.Minute()
-	hm := hour*100 + minute
-
-	if weekday == time.Saturday || weekday == time.Sunday {
-		if weekday == time.Saturday && hm < 600 {
-			return "美股", true
+	for _, r := range appConfig.AutoRules {
+		if matchRule(now, r) {
+			return r.Group, true
 		}
-		return "全部", true
-	}
-
-	if hm >= 900 && hm <= 1530 {
-		return "A股", true
-	}
-	if hm > 1530 && hm < 1600 {
-		return "全部", true
-	}
-	if hm >= 1600 || hm < 800 {
-		return "美股", true
 	}
 	return "全部", true
 }

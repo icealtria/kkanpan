@@ -15,12 +15,11 @@ import (
 )
 
 var (
-	cachedData  []StockData
-	cacheMutex  sync.RWMutex
-	lastFetchTs int64
-	cacheTTL    int64 = 55
-	priceHist         = make(map[string][]float64)
-	histMutex   sync.Mutex
+	cachedData []StockData
+	cacheMutex sync.RWMutex
+	lastFetch  int64
+	priceHist  = make(map[string][]float64)
+	histMutex  sync.Mutex
 
 	httpClient = &http.Client{
 		Timeout: 8 * time.Second,
@@ -28,7 +27,34 @@ var (
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		},
 	}
+	yahooClient = &http.Client{
+		Timeout: 8 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
 )
+
+func initClients() {
+	if appConfig.Proxy != "" {
+		u, err := url.Parse(appConfig.Proxy)
+		if err == nil {
+			httpClient.Transport = &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+				Proxy:           http.ProxyURL(u),
+			}
+			yahooClient.Transport = &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+				Proxy:           http.ProxyURL(u),
+			}
+		}
+	}
+	if appConfig.CacheTTL != 0 {
+		cacheTTL = appConfig.CacheTTL
+	}
+}
+
+var cacheTTL int64 = 55
 
 func fetchQT(codes []string) map[string][]string {
 	out := make(map[string][]string)
@@ -36,10 +62,7 @@ func fetchQT(codes []string) map[string][]string {
 		return out
 	}
 	urlStr := "https://qt.gtimg.cn/q=" + strings.Join(codes, ",")
-	req, err := http.NewRequest("GET", urlStr, nil)
-	if err != nil {
-		return out
-	}
+	req, _ := http.NewRequest("GET", urlStr, nil)
 	req.Header.Set("Referer", "https://gu.qq.com/")
 	req.Header.Set("User-Agent", "Mozilla/5.0")
 	resp, err := httpClient.Do(req)
@@ -47,20 +70,16 @@ func fetchQT(codes []string) map[string][]string {
 		return out
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return out
-	}
+	body, _ := io.ReadAll(resp.Body)
 	re := regexp.MustCompile(`v_(\w+)="([^"]*)"`)
-	matches := re.FindAllSubmatch(body, -1)
-	for _, m := range matches {
+	for _, m := range re.FindAllSubmatch(body, -1) {
 		code := string(m[1])
-		rawVal := string(m[2])
+		raw := string(m[2])
 		var vals []string
-		if strings.Contains(rawVal, "~") {
-			vals = strings.Split(rawVal, "~")
+		if strings.Contains(raw, "~") {
+			vals = strings.Split(raw, "~")
 		} else {
-			vals = strings.Split(rawVal, ",")
+			vals = strings.Split(raw, ",")
 		}
 		out[code] = vals
 	}
@@ -68,22 +87,15 @@ func fetchQT(codes []string) map[string][]string {
 }
 
 func fetchYahoo(code string) ([]float64, float64, float64) {
-	yahooSymbol := codeToYahoo(code)
-	urlStr := fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1m&range=1d", url.QueryEscape(yahooSymbol))
-	req, err := http.NewRequest("GET", urlStr, nil)
-	if err != nil {
-		return nil, 0, 0
-	}
+	urlStr := fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1m&range=1d", url.QueryEscape(code))
+	req, _ := http.NewRequest("GET", urlStr, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0")
-	resp, err := httpClient.Do(req)
+	resp, err := yahooClient.Do(req)
 	if err != nil {
 		return nil, 0, 0
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, 0, 0
-	}
+	body, _ := io.ReadAll(resp.Body)
 	var parsed struct {
 		Chart struct {
 			Result []struct {
@@ -123,152 +135,41 @@ func fetchYahoo(code string) ([]float64, float64, float64) {
 	return prices, price, prev
 }
 
-func resolveEastmoneyQuoteID(sym string) string {
-	// ponytail: 动态解析不同平台代码差异，东财 QuoteID 如 105.AAPL
-	urlStr := fmt.Sprintf("https://searchapi.eastmoney.com/api/suggest/get?input=%s&type=14&token=D43BF722C8E33BDC906FB84D85E326E8", url.QueryEscape(sym))
+func fetchMinute(code string) []float64 {
+	urlStr := "https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=" + code
 	req, _ := http.NewRequest("GET", urlStr, nil)
-	req.Header.Set("Referer", "https://quote.eastmoney.com/")
+	req.Header.Set("User-Agent", "Mozilla/5.0")
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return ""
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	var r struct {
-		QuotationCodeTable struct {
-			Data []struct {
-				QuoteID string `json:"QuoteID"`
-				Code    string `json:"Code"`
-			} `json:"Data"`
-		} `json:"QuotationCodeTable"`
-	}
-	if err := json.Unmarshal(body, &r); err != nil || len(r.QuotationCodeTable.Data) == 0 {
-		return ""
-	}
-	// 优先精确匹配 Code
-	for _, d := range r.QuotationCodeTable.Data {
-		if strings.EqualFold(d.Code, sym) {
-			return d.QuoteID
-		}
-	}
-	return r.QuotationCodeTable.Data[0].QuoteID
-}
-
-func fetchEastmoneyPrices(code string) []float64 {
-	// 仅对美股，期货走历史兜底避免代码错配
-	if strings.HasPrefix(code, "hf_") {
-		return nil // ponytail: 期货跨平台代码差异大（GC=F vs 105.AU），暂用 priceHist
-	}
-	sym := codeToYahoo(code)
-	sym = strings.TrimPrefix(sym, "^")
-	sym = strings.TrimSuffix(sym, "=F")
-	if idx := strings.Index(sym, "."); idx >= 0 {
-		sym = sym[:idx]
-	}
-	if sym == "" {
 		return nil
 	}
-	quoteID := resolveEastmoneyQuoteID(sym)
-	var secids []string
-	var syms []string
-	if quoteID != "" && strings.Contains(quoteID, ".") {
-		parts := strings.SplitN(quoteID, ".", 2)
-		secids = []string{parts[0]}
-		syms = []string{parts[1]}
-	} else {
-		// 回退硬编码，兼容旧逻辑
-		secids = []string{"105", "100", "106"}
-		syms = []string{sym, sym, sym}
+	defer resp.Body.Close()
+	var j map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&j); err != nil {
+		return nil
 	}
-	today := time.Now().Format("20060102")
-	tomorrow := time.Now().Add(24 * time.Hour).Format("20060102")
-	yesterday := time.Now().Add(-24 * time.Hour).Format("20060102")
-	urls := []string{
-		fmt.Sprintf("https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=%%s.%%s&klt=1&fqt=1&lmt=500"),
-		fmt.Sprintf("https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=%%s.%%s&klt=1&fqt=1&beg=%s&end=%s", today, tomorrow),
-		fmt.Sprintf("https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=%%s.%%s&klt=1&fqt=1&beg=%s&end=%s", yesterday, today),
-	}
-	for i, secid := range secids {
-		s := syms[0]
-		if len(syms) > i {
-			s = syms[i]
-		}
-		for _, tmpl := range urls {
-			urlStr := fmt.Sprintf(tmpl, secid, url.QueryEscape(s))
-			req, _ := http.NewRequest("GET", urlStr, nil)
-			req.Header.Set("Referer", "https://quote.eastmoney.com/")
-			resp, err := httpClient.Do(req)
-			if err != nil {
-				continue
-			}
-			body, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			var j struct {
-				Data struct {
-					Klines []string `json:"klines"`
-				} `json:"data"`
-			}
-			if err := json.Unmarshal(body, &j); err != nil || len(j.Data.Klines) < 2 {
-				continue
-			}
-			var prices []float64
-			for _, k := range j.Data.Klines {
-				parts := strings.Split(k, ",")
-				if len(parts) < 3 {
-					continue
-				}
-				if p, err := strconv.ParseFloat(parts[2], 64); err == nil && p > 0 {
+	dataMap, _ := j["data"].(map[string]interface{})
+	item, _ := dataMap[code].(map[string]interface{})
+	d, _ := item["data"].(map[string]interface{})
+	rows, _ := d["data"].([]interface{})
+	var prices []float64
+	for _, row := range rows {
+		if str, ok := row.(string); ok {
+			parts := strings.Fields(str)
+			if len(parts) >= 2 {
+				if p, err := strconv.ParseFloat(parts[1], 64); err == nil {
 					prices = append(prices, p)
 				}
 			}
-			if len(prices) > 2 {
-				return prices
-			}
 		}
 	}
-	return nil
-}
-
-func fetchMinute(code string) []float64 {
-	if strings.HasPrefix(code, "sh") || strings.HasPrefix(code, "sz") {
-		urlStr := "https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=" + code
-		req, _ := http.NewRequest("GET", urlStr, nil)
-		resp, err := httpClient.Do(req)
-		if err == nil {
-			defer resp.Body.Close()
-			var j map[string]interface{}
-			if err := json.NewDecoder(resp.Body).Decode(&j); err == nil {
-				if dataMap, ok := j["data"].(map[string]interface{}); ok {
-					if item, ok := dataMap[code].(map[string]interface{}); ok {
-						if d, ok := item["data"].(map[string]interface{}); ok {
-							if rows, ok := d["data"].([]interface{}); ok {
-								var prices []float64
-								for _, row := range rows {
-									if str, ok := row.(string); ok {
-										parts := strings.Fields(str)
-										if len(parts) >= 2 {
-											if p, err := strconv.ParseFloat(parts[1], 64); err == nil {
-												prices = append(prices, p)
-											}
-										}
-									}
-								}
-								if len(prices) > 2 {
-									return prices
-								}
-							}
-						}
-					}
-				}
-			}
-		}
+	if len(prices) < 2 {
+		return nil
 	}
-	prices, _, _ := fetchYahoo(code)
 	return prices
 }
 
 func fetchUsMinute(code string) []float64 {
-	// gu.qq.com/usAAPL.OQ/gg 同源：web.ifzq.gtimg.cn/appstock/app/UsMinute/query?code=usAAPL
 	urlStr := "https://web.ifzq.gtimg.cn/appstock/app/UsMinute/query?code=" + url.QueryEscape(code)
 	req, _ := http.NewRequest("GET", urlStr, nil)
 	req.Header.Set("Referer", "https://gu.qq.com/")
@@ -354,67 +255,87 @@ type chartResult struct {
 }
 
 func refreshData() []StockData {
-	configs := loadConfig()
-	var codes []string
+	configs := loadStocks()
+	var tencentCodes []string
 	for _, c := range configs {
-		codes = append(codes, c.Code)
+		if c.Source == "tencent" {
+			tencentCodes = append(tencentCodes, c.Code)
+		}
 	}
-	qt := fetchQT(codes)
+	qt := fetchQT(tencentCodes)
+
 	chartMap := make(map[string]chartResult)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	for _, c := range configs {
 		wg.Add(1)
-		go func(code string) {
+		go func(cfg StockConfig) {
 			defer wg.Done()
 			var res chartResult
-			if strings.HasPrefix(code, "sh") || strings.HasPrefix(code, "sz") {
-				res.prices = fetchMinute(code)
-			} else if strings.HasPrefix(code, "us") {
-				res.prices = fetchUsMinute(code) // ponytail: 腾讯 UsMinute 直连稳定，期货仍无图
-			} else {
-				res.prices = nil
+			switch cfg.Source {
+			case "tencent":
+				if strings.HasPrefix(cfg.Code, "sh") || strings.HasPrefix(cfg.Code, "sz") {
+					res.prices = fetchMinute(cfg.Code)
+				} else if strings.HasPrefix(cfg.Code, "us") {
+					res.prices = fetchUsMinute(cfg.Code)
+				}
+			case "yahoo":
+				res.prices, res.yPrice, res.yPrev = fetchYahoo(cfg.Code)
 			}
 			mu.Lock()
-			chartMap[code] = res
+			chartMap[cfg.Code] = res
 			mu.Unlock()
-		}(c.Code)
+		}(c)
 	}
 	wg.Wait()
 
 	var items []StockData
 	for _, c := range configs {
 		code := c.Code
-		vals := qt[code]
-		if len(vals) == 0 {
-			clean := strings.ReplaceAll(strings.ReplaceAll(code, "sh", ""), "sz", "")
-			vals = qt[clean]
-		}
-		price, change, pct, prev := parseQT(code, vals)
 		cRes := chartMap[code]
-		if cRes.yPrice > 0 && cRes.yPrev > 0 {
-			price = cRes.yPrice
-			prev = cRes.yPrev
-			change = price - prev
+		var price, change, pct, prev float64
+		var prices []float64
+
+		switch c.Source {
+		case "tencent":
+			vals := qt[code]
+			if len(vals) == 0 {
+				clean := strings.ReplaceAll(strings.ReplaceAll(code, "sh", ""), "sz", "")
+				vals = qt[clean]
+			}
+			price, change, pct, prev = parseQT(code, vals)
+			if code == "^VIX" {
+				price, change, pct, prev = 0, 0, 0, 0
+			}
+			prices = cRes.prices
+		case "yahoo":
+			price, prev = cRes.yPrice, cRes.yPrev
 			if prev != 0 {
+				change = price - prev
 				pct = (change / prev) * 100
 			}
+			prices = cRes.prices
+			if code == "^VIX" && price == 0 {
+				price, change, pct, prev = 0, 0, 0, 0
+			}
 		}
-		prices := cRes.prices
-		// ponytail: 仅A股/美股维护分时，期货无图不进 priceHist
-		isChart := strings.HasPrefix(code, "sh") || strings.HasPrefix(code, "sz") || strings.HasPrefix(code, "us")
+
+		isChart := false
+		if c.Source == "tencent" {
+			isChart = strings.HasPrefix(code, "sh") || strings.HasPrefix(code, "sz") || strings.HasPrefix(code, "us")
+		} else {
+			isChart = len(prices) >= 2 || price > 0
+		}
 		if isChart {
 			if len(prices) < 2 {
 				histMutex.Lock()
 				h := priceHist[code]
 				if price > 0 {
 					h = append(h, price)
-					if len(h) > tradingMinutes(code) {
-						if tradingMinutes(code) > 0 {
-							h = h[len(h)-tradingMinutes(code):]
-						} else if len(h) > 1440 {
-							h = h[len(h)-1440:]
-						}
+					if len(h) > tradingMinutes(code) && tradingMinutes(code) > 0 {
+						h = h[len(h)-tradingMinutes(code):]
+					} else if len(h) > 1440 {
+						h = h[len(h)-1440:]
 					}
 					priceHist[code] = h
 				}
@@ -437,6 +358,7 @@ func refreshData() []StockData {
 		} else {
 			prices = nil
 		}
+
 		svg := ""
 		if len(prices) > 2 {
 			svg = svgSparkline(prices, 300, 60, code)
@@ -449,7 +371,7 @@ func refreshData() []StockData {
 	}
 	cacheMutex.Lock()
 	cachedData = items
-	lastFetchTs = time.Now().Unix()
+	lastFetch = time.Now().Unix()
 	cacheMutex.Unlock()
 	return items
 }
@@ -457,7 +379,11 @@ func refreshData() []StockData {
 func getData() []StockData {
 	cacheMutex.RLock()
 	now := time.Now().Unix()
-	if now-lastFetchTs <= cacheTTL && len(cachedData) > 0 {
+	ttl := cacheTTL
+	if appConfig.CacheTTL != 0 {
+		ttl = appConfig.CacheTTL
+	}
+	if now-lastFetch <= ttl && len(cachedData) > 0 {
 		defer cacheMutex.RUnlock()
 		return cachedData
 	}

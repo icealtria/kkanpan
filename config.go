@@ -4,14 +4,13 @@ import (
 	"encoding/json"
 	"log"
 	"os"
-	"strings"
 )
 
-// StockConfig / StockData 保持不变，供 config.json 覆盖
 type StockConfig struct {
-	Code  string `json:"code"`
-	Name  string `json:"name"`
-	Group string `json:"group"`
+	Code   string `json:"code"`
+	Name   string `json:"name"`
+	Group  string `json:"group"`
+	Source string `json:"source"` // "tencent" | "yahoo"
 }
 
 type StockData struct {
@@ -26,64 +25,75 @@ type StockData struct {
 	SVG    string    `json:"svg,omitempty"`
 }
 
-var (
-	defaultConfigs = []StockConfig{
-		{Code: "sh000001", Name: "上证指数", Group: "A股"},
-		{Code: "sh600519", Name: "贵州茅台", Group: "A股"},
-		{Code: "sz399006", Name: "创业板指", Group: "A股"},
-		{Code: "usAAPL", Name: "苹果", Group: "美股"},
-		{Code: "usNVDA", Name: "英伟达", Group: "美股"},
-		{Code: "usTSLA", Name: "特斯拉", Group: "美股"},
-		{Code: "hf_GC", Name: "黄金", Group: "期货"},
-		{Code: "hf_CL", Name: "原油", Group: "期货"},
-		{Code: "usVIX", Name: "VIX", Group: "期货"},
-	}
-	yahooMap = map[string]string{
-		"hf_GC": "GC=F",
-		"hf_CL": "CL=F",
-		"usVIX": "^VIX",
-	}
-)
+type AutoRule struct {
+	Group    string `json:"group"`
+	Weekdays []int  `json:"weekdays"` // 0=Sun 1=Mon ... 6=Sat, 空表示每天
+	Start    string `json:"start"`    // "09:00"
+	End      string `json:"end"`      // "15:30"
+}
 
-func loadConfig() []StockConfig {
-	paths := []string{"config.json", "/mnt/us/extensions/kkanpan/config.json", "/mnt/us/kkanpan/config.json"}
+type AppConfig struct {
+	Proxy          string         `json:"proxy"`          // "http://127.0.0.1:7890" 可空
+	CacheTTL       int64          `json:"cacheTTL"`       // 秒
+	PinnedGroups   []string       `json:"pinnedGroups"`   // AUTO 时常驻的组
+	AutoRules      []AutoRule     `json:"autoRules"`      // 按顺序匹配，09:00-15:30 格式
+	TradingMinutes map[string]int `json:"tradingMinutes"` // code/分组 -> 分钟数
+}
+
+var appConfig AppConfig
+var stocksCache []StockConfig
+
+func loadAppConfig() AppConfig {
+	paths := []string{"app.json", "/mnt/us/extensions/kkanpan/app.json", "/mnt/us/kkanpan/app.json"}
 	for _, p := range paths {
 		if data, err := os.ReadFile(p); err == nil {
-			var cfg []StockConfig
-			if err := json.Unmarshal(data, &cfg); err == nil && len(cfg) > 0 {
-				log.Printf("Loaded config from %s (%d items)", p, len(cfg))
+			var cfg AppConfig
+			if err := json.Unmarshal(data, &cfg); err == nil {
+				if cfg.CacheTTL == 0 {
+					cfg.CacheTTL = 55
+				}
+				if cfg.TradingMinutes == nil {
+					cfg.TradingMinutes = map[string]int{}
+				}
+				log.Printf("Loaded app config from %s (proxy=%q)", p, cfg.Proxy)
 				return cfg
 			}
 		}
 	}
-	return defaultConfigs
+	log.Fatal("app.json not found or invalid")
+	return AppConfig{}
 }
 
-func codeToYahoo(code string) string {
-	if y, ok := yahooMap[code]; ok {
-		return y
+func loadStocks() []StockConfig {
+	if stocksCache != nil {
+		return stocksCache
 	}
-	if strings.HasPrefix(code, "us") {
-		return code[2:]
+	paths := []string{"stocks.json", "/mnt/us/extensions/kkanpan/stocks.json", "/mnt/us/kkanpan/stocks.json"}
+	for _, p := range paths {
+		if data, err := os.ReadFile(p); err == nil {
+			var cfg []StockConfig
+			if err := json.Unmarshal(data, &cfg); err == nil && len(cfg) > 0 {
+				log.Printf("Loaded stocks from %s (%d items)", p, len(cfg))
+				stocksCache = cfg
+				return cfg
+			}
+		}
 	}
-	if strings.HasPrefix(code, "sh") {
-		return code[2:] + ".SS"
-	}
-	if strings.HasPrefix(code, "sz") {
-		return code[2:] + ".SZ"
-	}
-	return code
+	log.Fatal("stocks.json not found or empty")
+	return nil
 }
 
 func tradingMinutes(code string) int {
-	if strings.HasPrefix(code, "sh") || strings.HasPrefix(code, "sz") {
-		return 240 // 09:30-11:30 +13:00-15:00
+	if v, ok := appConfig.TradingMinutes[code]; ok {
+		return v
 	}
-	if strings.HasPrefix(code, "us") {
-		return 390 // 09:30-16:00 ET
-	}
-	if strings.HasPrefix(code, "hf_") {
-		return 1440 // 0:00-24:00
+	for _, s := range loadStocks() {
+		if s.Code == code {
+			if v, ok := appConfig.TradingMinutes[s.Group]; ok {
+				return v
+			}
+			break
+		}
 	}
 	return 0
 }

@@ -1,0 +1,16 @@
+[
+  {"code": "sh000001", "name": "上证指数", "group": "A股", "source": "tencent"},
+  {"code": "sz002714", "name": "牧原股份", "group": "A股", "source": "tencent"},
+  {"code": "sz399006", "name": "创业板指", "group": "A股", "source": "tencent"},
+  {"code": "usINX", "name": "标普500", "group": "美股", "source": "tencent"},
+  {"code": "usQQQ", "name": "纳指100", "group": "美股", "source": "tencent"},
+  {"code": "usNVDA", "name": "英伟达", "group": "美股", "source": "tencent"},
+  {"code": "usMU", "name": "镁光", "group": "美股", "source": "tencent"},
+  {"code": "usAMD", "name": "AMD", "group": "美股", "source": "tencent"},
+  {"code": "usAAPL", "name": "苹果", "group": "美股", "source": "tencent"},
+  {"code": "usNVDA", "name": "英伟达", "group": "美股", "source": "tencent"},
+  {"code": "usTSLA", "name": "特斯拉", "group": "美股", "source": "tencent"},
+  {"code": "GC=F", "name": "黄金", "group": "期货", "source": "yahoo"},
+  {"code": "CL=F", "name": "原油", "group": "期货", "source": "yahoo"},
+  {"code": "^VIX", "name": "VIX", "group": "期货", "source": "yahoo"}
+]
