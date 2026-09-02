@@ -102,20 +102,28 @@ func svgItemLabel(item StockData) string {
 	return item.Code
 }
 
-func svgWriteCard(sb *strings.Builder, item StockData, startY, width int, withSparkline bool) {
-	cardH := 65
+func svgWriteCard(sb *strings.Builder, item StockData, startY, width, cardH int, withSparkline bool) {
 	sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="2"/>`, startY, width-60, cardH))
-	sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="16">%s</text>`, startY+30, svgItemLabel(item)))
+	nameStr := item.Name
+	if nameStr == "" {
+		nameStr = item.Code
+	}
+	sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="26">%s</text>`, startY+28, nameStr))
+	sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="18" fill="#666">%s</text>`, startY+62, item.Code))
 	priceStr, chgStr := stockStrings(item.Price, item.Change, item.Pct, true)
 	if withSparkline && len(item.Prices) > 2 {
-		pts, _, _, _ := sparklinePoints(item.Prices, item.Code, 420, 45)
-		gx, gy := 300, startY+10
+		pts, _, _, _ := sparklinePoints(item.Prices, item.Code, 440, 70)
+		gx, gy := 240, startY+12
 		shifted := shiftedPoints(pts, gx, gy)
-		sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="420" height="45" fill="none" stroke="black" stroke-width="1"/>`, gx, gy))
+		sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="440" height="70" fill="none" stroke="black" stroke-width="1"/>`, gx, gy))
 		sb.WriteString(fmt.Sprintf(`<polyline fill="none" stroke="black" stroke-width="1.5" points="%s"/>`, strings.Join(shifted, " ")))
 	}
-	sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="22" font-weight="bold" text-anchor="end">%s</text>`, width-30, startY+28, priceStr))
-	sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="14" text-anchor="end">%s</text>`, width-30, startY+48, chgStr))
+	chgY := startY + 64
+	if withSparkline {
+		chgY = startY + 66
+	}
+	sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="34" font-weight="bold" text-anchor="end">%s</text>`, width-45, startY+28, priceStr))
+	sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="20" text-anchor="end">%s</text>`, width-45, chgY, chgStr))
 }
 
 func drawLine(img *image.Gray, x0, y0, x1, y1 int, col uint8, width int) {
@@ -540,10 +548,10 @@ func renderScreenSVG(data []StockData, width, height int) string {
 	if isAuto {
 		modeTag = fmt.Sprintf("[AUTO: %s]", effectiveGroup)
 	}
-	sb.WriteString(fmt.Sprintf(`<text x="30" y="38" font-family="monospace" font-size="26" font-weight="bold">KKANPAN - KPW3</text>`))
-	sb.WriteString(fmt.Sprintf(`<text x="%d" y="38" font-family="monospace" font-size="20" font-weight="bold" text-anchor="end">%s</text>`, width-90, modeTag))
+	sb.WriteString(fmt.Sprintf(`<text x="30" y="38" font-family="monospace" font-size="32" font-weight="bold">KKANPAN</text>`))
+	sb.WriteString(fmt.Sprintf(`<text x="%d" y="38" font-family="monospace" font-size="24" font-weight="bold" text-anchor="end">%s</text>`, width-90, modeTag))
 
-	sb.WriteString(fmt.Sprintf(`<a href="/exit"><rect x="%d" y="10" width="45" height="34" fill="white" stroke="black" stroke-width="2"/><text x="%d" y="34" font-family="monospace" font-size="20" font-weight="bold" text-anchor="middle">X</text></a>`, width-75, width-52))
+	sb.WriteString(fmt.Sprintf(`<a href="/exit"><rect x="%d" y="10" width="65" height="46" fill="white" stroke="black" stroke-width="3"/><text x="%d" y="34" font-family="monospace" font-size="20" font-weight="bold" text-anchor="middle">X</text></a>`, width-95, width-62))
 
 	modes := GetTabModes()
 	tabs := make([]struct{ Key, Label string }, len(modes))
@@ -551,90 +559,68 @@ func renderScreenSVG(data []StockData, width, height int) string {
 		tabs[i] = struct{ Key, Label string }{m, m}
 	}
 	tabCount := len(tabs)
-	tabGap := 8
+	tabGap := 10
 	tabTotalW := width - 60
 	tabW := (tabTotalW - (tabCount-1)*tabGap) / tabCount
-	tabY := 52
-	tabH := 36
+	tabY := 68
+	tabH := 50
 
 	for i, t := range tabs {
 		tx := 30 + i*(tabW+tabGap)
 		selected := (viewMode == t.Key)
 		if selected {
-			sb.WriteString(fmt.Sprintf(`<a href="/switch?view=%s"><rect x="%d" y="%d" width="%d" height="%d" fill="black"/><text x="%d" y="%d" font-family="monospace" font-size="16" fill="white" text-anchor="middle">%s</text></a>`, t.Key, tx, tabY, tabW, tabH, tx+tabW/2, tabY+24, t.Label))
+			sb.WriteString(fmt.Sprintf(`<a href="/switch?view=%s"><rect x="%d" y="%d" width="%d" height="%d" fill="black"/><text x="%d" y="%d" font-family="monospace" font-size="18" fill="white" text-anchor="middle">%s</text></a>`, t.Key, tx, tabY, tabW, tabH, tx+tabW/2, tabY+30, t.Label))
 		} else {
-			sb.WriteString(fmt.Sprintf(`<a href="/switch?view=%s"><rect x="%d" y="%d" width="%d" height="%d" fill="white" stroke="black" stroke-width="2"/><text x="%d" y="%d" font-family="monospace" font-size="16" fill="black" text-anchor="middle">%s</text></a>`, t.Key, tx, tabY, tabW, tabH, tx+tabW/2, tabY+24, t.Label))
+			sb.WriteString(fmt.Sprintf(`<a href="/switch?view=%s"><rect x="%d" y="%d" width="%d" height="%d" fill="white" stroke="black" stroke-width="2"/><text x="%d" y="%d" font-family="monospace" font-size="18" fill="black" text-anchor="middle">%s</text></a>`, t.Key, tx, tabY, tabW, tabH, tx+tabW/2, tabY+30, t.Label))
 		}
 	}
 
-	sb.WriteString(fmt.Sprintf(`<line x1="30" y1="96" x2="%d" y2="96" stroke="black" stroke-width="2"/>`, width-30))
+	sb.WriteString(fmt.Sprintf(`<line x1="30" y1="128" x2="%d" y2="128" stroke="black" stroke-width="3"/>`, width-30))
 
-	groups := make(map[string][]StockData)
-	for _, d := range data {
-		groups[d.Group] = append(groups[d.Group], d)
+	pages := paginate(data, width, height)
+	totalPages := len(pages)
+	curPage := clampPage(totalPages)
+	var curBlocks []block
+	if totalPages > 0 && curPage < totalPages {
+		curBlocks = pages[curPage]
 	}
-
-	startY := 110
-	if effectiveGroup != "ALL" && len(groups[effectiveGroup]) > 0 {
-		list := groups[effectiveGroup]
-		sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="36" fill="black"/>`, startY, width-60))
-		sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="18" fill="white">=== %s FOCUS VIEW (%d STOCKS) ===</text>`, startY+24, effectiveGroup, len(list)))
-		startY += 45
-
-		for _, item := range list {
-			svgWriteCard(&sb, item, startY, width, true)
-			startY += 65 + 6
-			if startY > height-80 {
-				break
-			}
+	startY := 142
+	for _, b := range curBlocks {
+		if b.isHeader {
+			sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="38" fill="black"/>`, startY, width-60))
+			sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="22" fill="white">[ %s ]</text>`, startY+24, b.group))
+			startY += b.h
+			continue
 		}
-	} else {
-		for _, gName := range GetAllGroups() {
-			list, ok := groups[gName]
-			if !ok || len(list) == 0 {
-				continue
-			}
-			sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="32" fill="black"/>`, startY, width-60))
-			sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="16" fill="white">[ %s ]</text>`, startY+22, gName))
-			startY += 38
-
-			for _, item := range list {
-				svgWriteCard(&sb, item, startY, width, true)
-				startY += 65 + 6
-				if startY > height-80 {
+		cardH := b.h - b.gap
+		isPinned := false
+		if isAuto && b.group != effectiveGroup {
+			for _, pg := range appConfig.PinnedGroups {
+				if pg == b.group {
+					isPinned = true
 					break
 				}
 			}
-			startY += 6
 		}
+		svgWriteCard(&sb, b.data, startY, width, cardH, !isPinned)
+		startY += b.h
 	}
 
-	if isAuto && effectiveGroup != "ALL" {
-		for _, pg := range appConfig.PinnedGroups {
-			if pg == effectiveGroup {
-				continue
-			}
-			futs, ok := groups[pg]
-			if !ok || len(futs) == 0 {
-				continue
-			}
-			sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="32" fill="black"/>`, startY, width-60))
-			sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="16" fill="white">[ %s ]</text>`, startY+22, pg))
-			startY += 38
-			for _, f := range futs {
-				if startY > height-80 {
-					break
-				}
-				svgWriteCard(&sb, f, startY, width, false)
-				startY += 71
-			}
+	if totalPages > 1 {
+		indicator := fmt.Sprintf("%d / %d", curPage+1, totalPages)
+		if curPage > 0 {
+			indicator = "▲ " + indicator
 		}
+		if curPage+1 < totalPages {
+			indicator = indicator + " ▼"
+		}
+		sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="18" fill="#555" text-anchor="middle">%s</text>`, width/2, height-40, indicator))
 	}
 
 	statusStr := FormatStatusBar()
 	sb.WriteString(fmt.Sprintf(`<line x1="30" y1="%d" x2="%d" y2="%d" stroke="black" stroke-width="1"/>`, height-58, width-30, height-58))
-	sb.WriteString(fmt.Sprintf(`<text x="30" y="%d" font-family="monospace" font-size="14" fill="#888">TAP [X] TO EXIT | TAP TABS TO SWITCH</text>`, height-16))
-	sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="14" font-weight="bold" text-anchor="end">%s</text>`, width-30, height-16, statusStr))
+	sb.WriteString(fmt.Sprintf(`<text x="30" y="%d" font-family="monospace" font-size="18" fill="#888">Swipe V: flip | Tap tabs | Tap [X] exit</text>`, height-16))
+	sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="18" font-weight="bold" text-anchor="end">%s</text>`, width-30, height-16, statusStr))
 	sb.WriteString(`</svg>`)
 	return sb.String()
 }
