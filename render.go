@@ -92,8 +92,8 @@ func svgWriteCard(sb *strings.Builder, item StockData, startY, width, cardH int,
 	priceStr, chgStr := stockStrings(item.Price, item.Change, item.Pct, true)
 	if withSparkline && len(item.Prices) > 2 {
 		gx, gy := 240, startY+12
-		sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="480" height="70" fill="none" stroke="black" stroke-width="1"/>`, gx, gy))
-		// 直接带偏移计算，避免 sparklinePoints→string→parse 往返
+		sparkW, sparkH := 480, 70
+		sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="1"/>`, gx, gy, sparkW, sparkH))
 		prices := item.Prices
 		minVal, maxVal := prices[0], prices[0]
 		for _, p := range prices {
@@ -104,15 +104,49 @@ func svgWriteCard(sb *strings.Builder, item StockData, startY, width, cardH int,
 				maxVal = p
 			}
 		}
+		isYahoo := len(item.Timestamps) == len(prices) && item.RegularEnd > item.RegularStart
+
+		// 昨收基准价
+		refVal := item.Prev
+		if isYahoo {
+			refVal = item.ChartPrevClose
+		}
+		if refVal == 0 {
+			refVal = (minVal + maxVal) / 2
+		}
+
+		// normal: 超出当日范围就不画
+		if refVal < minVal || refVal > maxVal {
+			refVal = 0
+		}
 		rng := maxVal - minVal
 		if rng == 0 {
 			rng = 1
 		}
-		denom := float64(len(prices) - 1)
+
+		if refVal > 0 {
+			refY := float64(gy) + 2.0 + (maxVal-refVal)*float64(sparkH-4)/rng
+			sb.WriteString(fmt.Sprintf(`<line x1="%d" y1="%.1f" x2="%d" y2="%.1f" stroke="black" stroke-width="1" stroke-dasharray="4,4"/>`, gx+4, refY, gx+sparkW-4, refY))
+		}
+
+		// 实线
+		var totalSec float64
+		if isYahoo {
+			totalSec = float64(item.RegularEnd - item.RegularStart)
+		}
+		total := tradingMinutes(item.Code)
+		if total == 0 {
+			total = len(prices)
+		}
 		pts := make([]string, 0, len(prices))
 		for i, p := range prices {
-			x := float64(gx) + 2.0 + float64(i)*float64(480-4)/denom
-			y := float64(gy) + 2.0 + (maxVal-p)*float64(70-4)/rng
+			var x float64
+			if isYahoo {
+				x = float64(gx) + 2.0 + float64(item.Timestamps[i]-item.RegularStart)*float64(sparkW-4)/totalSec
+			} else {
+				x = float64(gx) + 2.0 + float64(i)*float64(sparkW-4)/float64(total)
+			}
+			y := float64(gy) + 2.0 + (maxVal-p)*float64(sparkH-4)/rng
 			pts = append(pts, strconv.FormatFloat(x, 'f', 1, 64)+","+strconv.FormatFloat(y, 'f', 1, 64))
 		}
 		sb.WriteString(fmt.Sprintf(`<polyline fill="none" stroke="black" stroke-width="1.5" points="%s"/>`, strings.Join(pts, " ")))
@@ -393,24 +427,72 @@ func drawString(img *image.Gray, x, y int, text string, scale int, col uint8) in
 	return curX - x
 }
 
-func drawSparklineGraph(img *image.Gray, prices []float64, x, y, w, h int, code string) {
+func drawSparklineGraph(img *image.Gray, item StockData, x, y, w, h int) {
+	prices := item.Prices
 	if len(prices) < 2 {
 		return
 	}
 	drawRect(img, x, y, w, h, 0, 1)
-	_, minVal, maxVal, rng := sparklinePoints(prices, code, w, h)
-	midY := y + 2 + int((maxVal-(minVal+maxVal)/2)*float64(h-4)/rng)
-	for lx := x + 4; lx < x+w-4; lx += 6 {
-		if lx+3 < x+w-4 && midY >= 0 && midY < img.Rect.Dy() {
-			img.SetGray(lx, midY, color.Gray{Y: 128})
-			img.SetGray(lx+1, midY, color.Gray{Y: 128})
+	_, minVal, maxVal, rng := sparklinePoints(prices, item.Code, w, h)
+
+	isYahoo := len(item.Timestamps) == len(prices) && item.RegularEnd > item.RegularStart
+
+	// 昨收基准价: Yahoo用chartPrevClose, 腾讯用Prev
+	refVal := item.Prev
+	if isYahoo {
+		refVal = item.ChartPrevClose
+	}
+	if refVal == 0 {
+		refVal = (minVal + maxVal) / 2
+	}
+
+	isLarge := GetStyleMode() == "large"
+	if isLarge {
+		// large: 扩展min/max包含参考价, 虚线位置比例正确
+		if refVal < minVal {
+			minVal = refVal
+		}
+		if refVal > maxVal {
+			maxVal = refVal
+		}
+	} else {
+		// normal: 超出当日范围就不画
+		if refVal < minVal || refVal > maxVal {
+			refVal = 0
 		}
 	}
-	denom := float64(len(prices) - 1)
+	rng = maxVal - minVal
+	if rng == 0 {
+		rng = 1
+	}
+
+	// 昨收基准虚线
+	if refVal > 0 {
+		refY := y + 2 + int((maxVal-refVal)*float64(h-4)/rng)
+		for lx := x + 4; lx < x+w-4; lx += 6 {
+			if lx+3 < x+w-4 && refY >= 0 && refY < img.Rect.Dy() {
+				img.SetGray(lx, refY, color.Gray{Y: 128})
+				img.SetGray(lx+1, refY, color.Gray{Y: 128})
+			}
+		}
+	}
+
+	// 实线绘制
 	for i := 0; i < len(prices)-1; i++ {
-		x0 := x + 2 + int(float64(i)*float64(w-4)/denom)
+		var x0, x1 int
+		if isYahoo {
+			totalSec := float64(item.RegularEnd - item.RegularStart)
+			x0 = x + 2 + int(float64(item.Timestamps[i]-item.RegularStart)*float64(w-4)/totalSec)
+			x1 = x + 2 + int(float64(item.Timestamps[i+1]-item.RegularStart)*float64(w-4)/totalSec)
+		} else {
+			total := tradingMinutes(item.Code)
+			if total == 0 {
+				total = len(prices)
+			}
+			x0 = x + 2 + int(float64(i)*float64(w-4)/float64(total))
+			x1 = x + 2 + int(float64(i+1)*float64(w-4)/float64(total))
+		}
 		y0 := y + 2 + int((maxVal-prices[i])*float64(h-4)/rng)
-		x1 := x + 2 + int(float64(i+1)*float64(w-4)/denom)
 		y1 := y + 2 + int((maxVal-prices[i+1])*float64(h-4)/rng)
 		drawLine(img, x0, y0, x1, y1, 0, 2)
 	}
@@ -510,7 +592,7 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 			chartW := width - 490
 			chartH := cardH - 30
 			if len(item.Prices) > 2 {
-				drawSparklineGraph(img, item.Prices, 210, startY+15, chartW, chartH, item.Code)
+				drawSparklineGraph(img, item, 210, startY+15, chartW, chartH)
 			}
 			priceW := MeasureText(priceStr, 38)
 			chgW := MeasureText(chgStr, 24)
@@ -528,7 +610,7 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 			DrawText(img, 45, startY+48, item.Code, 18, color.Gray{Y: 100})
 			priceStr, chgStr := stockStrings(item.Price, item.Change, item.Pct, false)
 			if len(item.Prices) > 2 {
-				drawSparklineGraph(img, item.Prices, 240, startY+12, 480, 70, item.Code)
+				drawSparklineGraph(img, item, 240, startY+12, 480, 70)
 			}
 			priceW := MeasureText(priceStr, 34)
 			chgW := MeasureText(chgStr, 20)
@@ -626,19 +708,67 @@ func renderScreenSVG(data []StockData, width, height int) string {
 			sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="16" fill="#666">%s</text>`, startY+52, b.data.Code))
 			priceStr, chgStr := stockStrings(b.data.Price, b.data.Change, b.data.Pct, true)
 			if len(b.data.Prices) > 2 {
-				pts, _, _, _ := sparklinePoints(b.data.Prices, b.data.Code, width-490, cardH-30)
 				gx, gy := 210, startY+15
-				shifted := make([]string, 0, len(pts))
-				for _, pt := range pts {
-					parts := strings.Split(pt, ",")
-					if len(parts) == 2 {
-						xv, _ := strconv.ParseFloat(parts[0], 64)
-						yv, _ := strconv.ParseFloat(parts[1], 64)
-						shifted = append(shifted, fmt.Sprintf("%.1f,%.1f", xv+float64(gx), yv+float64(gy)))
+				sparkW := width - 490
+				sparkH := cardH - 30
+				prices := b.data.Prices
+				minVal, maxVal := prices[0], prices[0]
+				for _, p := range prices {
+					if p < minVal {
+						minVal = p
+					}
+					if p > maxVal {
+						maxVal = p
 					}
 				}
-				sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="1"/>`, gx, gy, width-490, cardH-30))
-				sb.WriteString(fmt.Sprintf(`<polyline fill="none" stroke="black" stroke-width="1.5" points="%s"/>`, strings.Join(shifted, " ")))
+				isYahoo := len(b.data.Timestamps) == len(prices) && b.data.RegularEnd > b.data.RegularStart
+
+				// 昨收基准价
+				refVal := b.data.Prev
+				if isYahoo {
+					refVal = b.data.ChartPrevClose
+				}
+				if refVal == 0 {
+					refVal = (minVal + maxVal) / 2
+				}
+
+				// 扩展min/max包含参考价
+				if refVal < minVal {
+					minVal = refVal
+				}
+				if refVal > maxVal {
+					maxVal = refVal
+				}
+				rng := maxVal - minVal
+				if rng == 0 {
+					rng = 1
+				}
+
+				refY := float64(gy) + 2.0 + (maxVal-refVal)*float64(sparkH-4)/rng
+				sb.WriteString(fmt.Sprintf(`<line x1="%d" y1="%.1f" x2="%d" y2="%.1f" stroke="black" stroke-width="1" stroke-dasharray="4,4"/>`, gx+4, refY, gx+sparkW-4, refY))
+
+				// 实线
+				var totalSec float64
+				if isYahoo {
+					totalSec = float64(b.data.RegularEnd - b.data.RegularStart)
+				}
+				total := tradingMinutes(b.data.Code)
+				if total == 0 {
+					total = len(prices)
+				}
+				pts := make([]string, 0, len(prices))
+				for i, p := range prices {
+					var x float64
+					if isYahoo {
+						x = float64(gx) + 2.0 + float64(b.data.Timestamps[i]-b.data.RegularStart)*float64(sparkW-4)/totalSec
+					} else {
+						x = float64(gx) + 2.0 + float64(i)*float64(sparkW-4)/float64(total)
+					}
+					y := float64(gy) + 2.0 + (maxVal-p)*float64(sparkH-4)/rng
+					pts = append(pts, strconv.FormatFloat(x, 'f', 1, 64)+","+strconv.FormatFloat(y, 'f', 1, 64))
+				}
+				sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="1"/>`, gx, gy, sparkW, sparkH))
+				sb.WriteString(fmt.Sprintf(`<polyline fill="none" stroke="black" stroke-width="1.5" points="%s"/>`, strings.Join(pts, " ")))
 			}
 			sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="28" font-weight="bold" text-anchor="end">%s</text>`, width-45, startY+32, priceStr))
 			sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="18" text-anchor="end">%s</text>`, width-45, startY+58, chgStr))

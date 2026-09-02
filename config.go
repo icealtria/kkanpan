@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"strings"
 )
 
 type StockConfig struct {
@@ -14,15 +15,19 @@ type StockConfig struct {
 }
 
 type StockData struct {
-	Code   string    `json:"code"`
-	Name   string    `json:"name"`
-	Group  string    `json:"group"`
-	Price  float64   `json:"price"`
-	Change float64   `json:"change"`
-	Pct    float64   `json:"pct"`
-	Prev   float64   `json:"prev"`
-	Prices []float64 `json:"prices,omitempty"`
-	SVG    string    `json:"svg,omitempty"`
+	Code           string    `json:"code"`
+	Name           string    `json:"name"`
+	Group          string    `json:"group"`
+	Price          float64   `json:"price"`
+	Change         float64   `json:"change"`
+	Pct            float64   `json:"pct"`
+	Prev           float64   `json:"prev"`
+	Prices         []float64 `json:"prices,omitempty"`
+	SVG            string    `json:"svg,omitempty"`
+	Timestamps     []int64   `json:"-"`
+	RegularStart   int64     `json:"-"`
+	RegularEnd     int64     `json:"-"`
+	ChartPrevClose float64   `json:"-"`
 }
 
 type AutoRule struct {
@@ -77,6 +82,18 @@ func loadStocks() []StockConfig {
 	}
 	log.Fatal("stocks.json not found or empty")
 	return nil
+}
+
+func tradingMinutes(code string) int {
+	switch {
+	case strings.HasPrefix(code, "sh"), strings.HasPrefix(code, "sz"):
+		return 240
+	case strings.HasPrefix(code, "us"):
+		return 390
+	case strings.HasPrefix(code, "hk"):
+		return 330
+	}
+	return 0
 }
 
 func GetAllGroups() []string {

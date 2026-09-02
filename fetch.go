@@ -113,13 +113,13 @@ func fetchQT(codes []string) map[string][]string {
 	return out
 }
 
-func fetchYahoo(code string) ([]float64, float64, float64) {
+func fetchYahoo(code string) (prices []float64, timestamps []int64, regStart, regEnd int64, price, prev, chartPrev float64) {
 	urlStr := fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1m&range=1d", url.QueryEscape(code))
 	req, _ := http.NewRequest("GET", urlStr, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0")
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, 0, 0
+		return
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
@@ -130,7 +130,14 @@ func fetchYahoo(code string) ([]float64, float64, float64) {
 					RegularMarketPrice float64 `json:"regularMarketPrice"`
 					PreviousClose      float64 `json:"previousClose"`
 					ChartPreviousClose float64 `json:"chartPreviousClose"`
+					CurrentTradingPeriod struct {
+						Regular struct {
+							Start int64 `json:"start"`
+							End   int64 `json:"end"`
+						} `json:"regular"`
+					} `json:"currentTradingPeriod"`
 				} `json:"meta"`
+				Timestamp  []int64 `json:"timestamp"`
 				Indicators struct {
 					Quote []struct {
 						Close []*float64 `json:"close"`
@@ -140,26 +147,39 @@ func fetchYahoo(code string) ([]float64, float64, float64) {
 		} `json:"chart"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil || len(parsed.Chart.Result) == 0 {
-		return nil, 0, 0
+		return
 	}
 	res := parsed.Chart.Result[0]
-	var prices []float64
-	if len(res.Indicators.Quote) > 0 {
+	if len(res.Indicators.Quote) > 0 && len(res.Timestamp) > 0 {
+		closes := res.Indicators.Quote[0].Close
+		for i, v := range closes {
+			if i >= len(res.Timestamp) {
+				break
+			}
+			if v != nil {
+				prices = append(prices, *v)
+				timestamps = append(timestamps, res.Timestamp[i])
+			}
+		}
+	} else if len(res.Indicators.Quote) > 0 {
 		for _, v := range res.Indicators.Quote[0].Close {
 			if v != nil {
 				prices = append(prices, *v)
 			}
 		}
 	}
-	price := res.Meta.RegularMarketPrice
+	price = res.Meta.RegularMarketPrice
 	if price == 0 && len(prices) > 0 {
 		price = prices[len(prices)-1]
 	}
-	prev := res.Meta.PreviousClose
+	prev = res.Meta.PreviousClose
 	if prev == 0 {
 		prev = res.Meta.ChartPreviousClose
 	}
-	return prices, price, prev
+	chartPrev = res.Meta.ChartPreviousClose
+	regStart = res.Meta.CurrentTradingPeriod.Regular.Start
+	regEnd = res.Meta.CurrentTradingPeriod.Regular.End
+	return
 }
 
 func parseGtimgRows(rows []string) []float64 {
@@ -274,9 +294,13 @@ func parseQT(code string, vals []string) (price, change, pct, prev float64) {
 }
 
 type chartResult struct {
-	prices []float64
-	yPrice float64
-	yPrev  float64
+	prices     []float64
+	timestamps []int64
+	regStart   int64
+	regEnd     int64
+	chartPrev  float64
+	yPrice     float64
+	yPrev      float64
 }
 
 func refreshData() []StockData {
@@ -305,7 +329,7 @@ func refreshData() []StockData {
 			case "tencent":
 				res.prices = fetchGtimgMinute(cfg.Code)
 			case "yahoo":
-				res.prices, res.yPrice, res.yPrev = fetchYahoo(cfg.Code)
+				res.prices, res.timestamps, res.regStart, res.regEnd, res.yPrice, res.yPrev, res.chartPrev = fetchYahoo(cfg.Code)
 			}
 			mu.Lock()
 			chartMap[cfg.Code] = res
@@ -377,6 +401,7 @@ func refreshData() []StockData {
 			Code: code, Name: c.Name, Group: c.Group,
 			Price: price, Change: change, Pct: pct, Prev: prev,
 			Prices: prices, SVG: svg,
+			Timestamps: cRes.timestamps, RegularStart: cRes.regStart, RegularEnd: cRes.regEnd, ChartPrevClose: cRes.chartPrev,
 		})
 	}
 	cacheMutex.Lock()
