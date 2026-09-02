@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -56,6 +57,34 @@ func initClients() {
 
 var cacheTTL int64 = 55
 var qtRe = regexp.MustCompile(`v_(\w+)="([^"]*)"`)
+
+// neededStocks 按当前 Tab 只返回需要拉取的配置 (KOReader 式按需, 省 60%+ 请求)
+func neededStocks() []StockConfig {
+	all := loadStocks()
+	mode := GetViewMode()
+	eff, isAuto := GetEffectiveGroup(mode)
+	if eff == "全部" {
+		return all
+	}
+	want := map[string]bool{eff: true}
+	if isAuto {
+		for _, pg := range appConfig.PinnedGroups {
+			if pg != eff {
+				want[pg] = true
+			}
+		}
+	}
+	var out []StockConfig
+	for _, c := range all {
+		if want[c.Group] {
+			out = append(out, c)
+		}
+	}
+	if len(out) == 0 {
+		return all
+	}
+	return out
+}
 
 func fetchQT(codes []string) map[string][]string {
 	out := make(map[string][]string)
@@ -255,7 +284,12 @@ type chartResult struct {
 }
 
 func refreshData() []StockData {
-	configs := loadStocks()
+	configs := neededStocks()
+	// 日志: 按需拉取前后对比 (全量 ~14 -> 单 Tab 3~6)
+	if len(configs) != len(loadStocks()) {
+		eff, _ := GetEffectiveGroup(GetViewMode())
+		log.Printf("[fetch] View %s: fetching %d/%d stocks", eff, len(configs), len(loadStocks()))
+	}
 	var tencentCodes []string
 	for _, c := range configs {
 		if c.Source == "tencent" {
@@ -377,6 +411,11 @@ func refreshData() []StockData {
 }
 
 func getData() []StockData {
+	needed := neededStocks()
+	needSet := make(map[string]bool, len(needed))
+	for _, c := range needed {
+		needSet[c.Code] = true
+	}
 	cacheMutex.RLock()
 	now := time.Now().Unix()
 	ttl := cacheTTL
@@ -384,8 +423,22 @@ func getData() []StockData {
 		ttl = appConfig.CacheTTL
 	}
 	if now-lastFetch <= ttl && len(cachedData) > 0 {
-		defer cacheMutex.RUnlock()
-		return cachedData
+		// 检查缓存是否覆盖当前 Tab 所需代码, 否则穿透刷新 (切 Tab 后缓存未命中)
+		cachedCodes := make(map[string]bool, len(cachedData))
+		for _, d := range cachedData {
+			cachedCodes[d.Code] = true
+		}
+		hit := true
+		for code := range needSet {
+			if !cachedCodes[code] {
+				hit = false
+				break
+			}
+		}
+		if hit {
+			defer cacheMutex.RUnlock()
+			return cachedData
+		}
 	}
 	cacheMutex.RUnlock()
 	return refreshData()
