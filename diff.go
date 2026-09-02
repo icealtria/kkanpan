@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"image"
-	"image/color"
 	"image/png"
 	"log"
 	"os"
@@ -305,69 +304,4 @@ func (sd *ScreenDiffer) ClearDiffCache() {
 	sd.mu.Lock()
 	sd.prevFrame = nil
 	sd.mu.Unlock()
-}
-
-// ============================================================
-// 按行快速 diff 统计（用于日志/调试）
-// ============================================================
-
-// DiffStats 返回新旧帧的差异统计
-type DiffStats struct {
-	TotalPixels   int
-	ChangedPixels int
-	DirtyRects    int
-	ChangeRatio   float64
-}
-
-func (sd *ScreenDiffer) GetDiffStats(oldImg, newImg *image.Gray) DiffStats {
-	stats := DiffStats{
-		TotalPixels: newImg.Rect.Dx() * newImg.Rect.Dy(),
-	}
-	if oldImg == nil {
-		stats.ChangedPixels = stats.TotalPixels
-		stats.DirtyRects = 1
-		stats.ChangeRatio = 1.0
-		return stats
-	}
-
-	w, h := newImg.Rect.Dx(), newImg.Rect.Dy()
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			if oldImg.GrayAt(x, y) != newImg.GrayAt(x, y) {
-				stats.ChangedPixels++
-			}
-		}
-	}
-
-	rects := sd.FindDirtyRects(oldImg, newImg)
-	stats.DirtyRects = len(rects)
-	if stats.TotalPixels > 0 {
-		stats.ChangeRatio = float64(stats.ChangedPixels) / float64(stats.TotalPixels)
-	}
-	return stats
-}
-
-// fillRectOnImage 是一个便捷方法用于在 image 上画填充矩形（用于调试可视化脏区域边框）
-func drawDirtyOverlay(img *image.Gray, rects []DirtyRect) {
-	for _, r := range rects {
-		// 画红色（黑色在灰度下）边框来标识脏区域
-		for x := r.X; x < r.X+r.W && x < img.Rect.Dx(); x++ {
-			if r.Y >= 0 && r.Y < img.Rect.Dy() {
-				img.SetGray(x, r.Y, color.Gray{Y: 80})
-			}
-			bottom := r.Y + r.H - 1
-			if bottom >= 0 && bottom < img.Rect.Dy() {
-				img.SetGray(x, bottom, color.Gray{Y: 80})
-			}
-		}
-		for y := r.Y; y < r.Y+r.H && y < img.Rect.Dy(); y++ {
-			if r.X >= 0 && r.X < img.Rect.Dx() {
-				img.SetGray(r.X, y, color.Gray{Y: 80})
-			}
-			right := r.X + r.W - 1
-			if right >= 0 && right < img.Rect.Dx() {
-				img.SetGray(right, y, color.Gray{Y: 80})
-			}
-		}
-	}
 }

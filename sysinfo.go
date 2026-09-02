@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -84,18 +85,16 @@ func lipcGet(service, prop string) string {
 
 // signalToBar 将信号强度数值转为可读的信号条表示
 func signalToBar(raw string) string {
-	// Kindle signalStrength 通常返回 0-100 的 RSSI 百分比值
-	// 也可能返回负的 dBm 值如 -67
 	raw = strings.TrimSpace(raw)
 	if raw == "" || raw == "0" {
 		return "OFF"
 	}
-
-	// 尝试解析
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return "?"
+	}
 	var level int
-	n, _ := parseSignalInt(raw)
 	if n < 0 {
-		// dBm 值: -30 极好, -67 好, -70 中等, -80 弱, -90 极弱
 		if n >= -50 {
 			level = 4
 		} else if n >= -65 {
@@ -106,7 +105,6 @@ func signalToBar(raw string) string {
 			level = 1
 		}
 	} else {
-		// 百分比 0-100
 		if n >= 75 {
 			level = 4
 		} else if n >= 50 {
@@ -117,34 +115,11 @@ func signalToBar(raw string) string {
 			level = 1
 		}
 	}
-
 	bars := []string{"▁", "▁▃", "▁▃▅", "▁▃▅▇"}
 	if level >= 1 && level <= 4 {
 		return bars[level-1]
 	}
 	return "?"
-}
-
-func parseSignalInt(s string) (int, bool) {
-	var v int
-	negative := false
-	if len(s) > 0 && s[0] == '-' {
-		negative = true
-		s = s[1:]
-	}
-	if len(s) == 0 {
-		return 0, false
-	}
-	for _, ch := range s {
-		if ch < '0' || ch > '9' {
-			return 0, false
-		}
-		v = v*10 + int(ch-'0')
-	}
-	if negative {
-		v = -v
-	}
-	return v, true
 }
 
 // FormatStatusBar 格式化底部右下角时间电量 (WiFi 已移除)

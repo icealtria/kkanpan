@@ -28,11 +28,7 @@ func sparklinePoints(prices []float64, code string, w, h int) (pts []string, min
 	if rng == 0 {
 		rng = 1
 	}
-	total := tradingMinutes(code)
 	denom := float64(len(prices) - 1)
-	if total > 0 && len(prices) <= total {
-		denom = float64(total - 1)
-	}
 	// 预分配减少 fmt开销
 	pts = make([]string, 0, len(prices))
 	buf := make([]byte, 0, 32)
@@ -343,11 +339,7 @@ func drawSparklineGraph(img *image.Gray, prices []float64, x, y, w, h int, code 
 			img.SetGray(lx+1, midY, color.Gray{Y: 128})
 		}
 	}
-	total := tradingMinutes(code)
 	denom := float64(len(prices) - 1)
-	if total > 0 && len(prices) <= total {
-		denom = float64(total - 1)
-	}
 	for i := 0; i < len(prices)-1; i++ {
 		x0 := x + 2 + int(float64(i)*float64(w-4)/denom)
 		y0 := y + 2 + int((maxVal-prices[i])*float64(h-4)/rng)

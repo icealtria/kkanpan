@@ -28,12 +28,6 @@ var (
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		},
 	}
-	yahooClient = &http.Client{
-		Timeout: 8 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-	}
 )
 
 func initClients() {
@@ -41,10 +35,6 @@ func initClients() {
 		u, err := url.Parse(appConfig.Proxy)
 		if err == nil {
 			httpClient.Transport = &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-				Proxy:           http.ProxyURL(u),
-			}
-			yahooClient.Transport = &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 				Proxy:           http.ProxyURL(u),
 			}
@@ -133,7 +123,7 @@ func fetchYahoo(code string) ([]float64, float64, float64) {
 	urlStr := fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1m&range=1d", url.QueryEscape(code))
 	req, _ := http.NewRequest("GET", urlStr, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0")
-	resp, err := yahooClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, 0, 0
 	}
@@ -374,37 +364,23 @@ func refreshData() []StockData {
 		} else {
 			isChart = len(prices) >= 2 || price > 0
 		}
-		if isChart {
-			if len(prices) < 2 {
-				histMutex.Lock()
-				h := priceHist[code]
-				if price > 0 {
-					h = append(h, price)
-					if len(h) > tradingMinutes(code) && tradingMinutes(code) > 0 {
-						h = h[len(h)-tradingMinutes(code):]
-					} else if len(h) > 1440 {
-						h = h[len(h)-1440:]
-					}
-					priceHist[code] = h
-				}
-				if len(h) > 2 {
-					prices = append([]float64(nil), h...)
-				}
-				histMutex.Unlock()
-			} else {
-				histMutex.Lock()
-				h := priceHist[code]
-				if price > 0 {
-					h = append(h, price)
-					if len(h) > tradingMinutes(code) && tradingMinutes(code) > 0 {
-						h = h[len(h)-tradingMinutes(code):]
-					}
-					priceHist[code] = h
-				}
-				histMutex.Unlock()
-			}
-		} else {
+		if !isChart {
 			prices = nil
+		} else {
+			// 纯核: extend h = takeLast 1440 (h ++ [price|price>0])
+			histMutex.Lock()
+			h := priceHist[code]
+			if price > 0 {
+				h = append(h, price)
+				if len(h) > 1440 {
+					h = h[len(h)-1440:]
+				}
+				priceHist[code] = h
+			}
+			if len(prices) < 2 && len(h) > 2 {
+				prices = append([]float64(nil), h...)
+			}
+			histMutex.Unlock()
 		}
 
 		svg := ""

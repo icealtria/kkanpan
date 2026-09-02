@@ -80,13 +80,6 @@ func loadStocks() []StockConfig {
 	return nil
 }
 
-func tradingMinutes(code string) int {
-	// 已废弃 tradingMinutes 配置, 直接由 API 数据长度推断
-	// sparkline 用 len(prices) 自适应宽度, 无需预设总数
-	_ = code
-	return 0
-}
-
 // GetAllGroups 返回 stocks.json 中去重后的分组, 保持首次出现顺序
 func GetAllGroups() []string {
 	seen := make(map[string]bool)
