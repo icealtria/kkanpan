@@ -55,6 +55,7 @@ func initClients() {
 }
 
 var cacheTTL int64 = 55
+var qtRe = regexp.MustCompile(`v_(\w+)="([^"]*)"`)
 
 func fetchQT(codes []string) map[string][]string {
 	out := make(map[string][]string)
@@ -71,8 +72,7 @@ func fetchQT(codes []string) map[string][]string {
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	re := regexp.MustCompile(`v_(\w+)="([^"]*)"`)
-	for _, m := range re.FindAllSubmatch(body, -1) {
+	for _, m := range qtRe.FindAllSubmatch(body, -1) {
 		code := string(m[1])
 		raw := string(m[2])
 		var vals []string

@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -226,14 +227,15 @@ func (sd *ScreenDiffer) UpdateScreen(newImg *image.Gray, fullRefresh bool) error
 	return nil
 }
 
-// writeAndEips 写入完整 PNG 并调用 eips
+// writeAndEips 写入 PNG 并调用 eips (BestSpeed 压缩, 比 Default 快 ~3x, Kindle ARM 收益明显)
 func writeAndEips(img *image.Gray, eipsPath string, hasEips, full bool) error {
 	tmpPath := "/tmp/kkanpan.png"
 	f, err := os.Create(tmpPath)
 	if err != nil {
 		return err
 	}
-	if err := png.Encode(f, img); err != nil {
+	enc := &png.Encoder{CompressionLevel: png.BestSpeed}
+	if err := enc.Encode(f, img); err != nil {
 		f.Close()
 		return err
 	}
@@ -263,34 +265,28 @@ func writeAndEips(img *image.Gray, eipsPath string, hasEips, full bool) error {
 
 // eipsPartialUpdate 裁剪脏区域为子图 PNG，用 eips 局部刷新
 func eipsPartialUpdate(img *image.Gray, eipsPath string, r DirtyRect, idx int) error {
-	// 裁剪子图
-	subImg := img.SubImage(image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H)).(*image.Gray)
-
-	// 需要创建一个新的 image.Gray，origin 归零，否则 PNG 坐标不对
 	cropped := image.NewGray(image.Rect(0, 0, r.W, r.H))
 	for y := 0; y < r.H; y++ {
 		srcOff := (r.Y+y)*img.Stride + r.X
 		dstOff := y * cropped.Stride
 		copy(cropped.Pix[dstOff:dstOff+r.W], img.Pix[srcOff:srcOff+r.W])
 	}
-	_ = subImg // just for reference
 
 	tmpPath := fmt.Sprintf("/tmp/kkanpan_patch_%d.png", idx)
 	f, err := os.Create(tmpPath)
 	if err != nil {
 		return err
 	}
-	if err := png.Encode(f, cropped); err != nil {
+	enc := &png.Encoder{CompressionLevel: png.BestSpeed}
+	if err := enc.Encode(f, cropped); err != nil {
 		f.Close()
 		return err
 	}
 	f.Close()
 
-	// eips -g <file> -x <col> -y <row>
-	// eips 的 -x/-y 参数单位是像素坐标
 	cmd := exec.Command(eipsPath, "-g", tmpPath,
-		fmt.Sprintf("-x"), fmt.Sprintf("%d", r.X),
-		fmt.Sprintf("-y"), fmt.Sprintf("%d", r.Y))
+		"-x", strconv.Itoa(r.X),
+		"-y", strconv.Itoa(r.Y))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("eips partial: %v (output: %s)", err, string(out))
 	}

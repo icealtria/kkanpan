@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"image/draw"
 	"math"
+	"strconv"
 	"strings"
 )
 
@@ -32,10 +33,17 @@ func sparklinePoints(prices []float64, code string, w, h int) (pts []string, min
 	if total > 0 && len(prices) <= total {
 		denom = float64(total - 1)
 	}
+	// 预分配减少 fmt开销
+	pts = make([]string, 0, len(prices))
+	buf := make([]byte, 0, 32)
 	for i, p := range prices {
 		x := 2.0 + float64(i)*float64(w-4)/denom
 		y := 2.0 + (maxVal-p)*float64(h-4)/rng
-		pts = append(pts, fmt.Sprintf("%.1f,%.1f", x, y))
+		buf = buf[:0]
+		buf = strconv.AppendFloat(buf, x, 'f', 1, 64)
+		buf = append(buf, ',')
+		buf = strconv.AppendFloat(buf, y, 'f', 1, 64)
+		pts = append(pts, string(buf))
 	}
 	return pts, minVal, maxVal, rng
 }
@@ -52,7 +60,7 @@ func svgSparkline(prices []float64, w, h int, code string) string {
 </svg>`, w, h, w, h, w, h, poly)
 }
 
-// E-Ink 位图引擎 — Kindle eips 用
+// E-Ink 位图引擎 — Kindle eips 用 (inline thickPixel 避免闭包分配)
 func drawLine(img *image.Gray, x0, y0, x1, y1 int, col uint8, width int) {
 	dx := int(math.Abs(float64(x1 - x0)))
 	dy := int(math.Abs(float64(y1 - y0)))
@@ -64,18 +72,27 @@ func drawLine(img *image.Gray, x0, y0, x1, y1 int, col uint8, width int) {
 		sy = -1
 	}
 	err := dx - dy
-	setThickPixel := func(cx, cy int) {
-		for ox := -width / 2; ox <= width/2; ox++ {
-			for oy := -width / 2; oy <= width/2; oy++ {
-				px, py := cx+ox, cy+oy
-				if px >= 0 && px < img.Rect.Dx() && py >= 0 && py < img.Rect.Dy() {
-					img.SetGray(px, py, color.Gray{Y: col})
+	half := width / 2
+	w := img.Rect.Dx()
+	h := img.Rect.Dy()
+	stride := img.Stride
+	pix := img.Pix
+	for {
+		// 内联 setThickPixel, 直接写 Pix 避免 SetGray 开销
+		for oy := -half; oy <= half; oy++ {
+			py := y0 + oy
+			if py < 0 || py >= h {
+				continue
+			}
+			rowOff := py * stride
+			for ox := -half; ox <= half; ox++ {
+				px := x0 + ox
+				if px < 0 || px >= w {
+					continue
 				}
+				pix[rowOff+px] = col
 			}
 		}
-	}
-	for {
-		setThickPixel(x0, y0)
 		if x0 == x1 && y0 == y1 {
 			break
 		}
@@ -92,37 +109,102 @@ func drawLine(img *image.Gray, x0, y0, x1, y1 int, col uint8, width int) {
 }
 
 func drawRect(img *image.Gray, x, y, w, h int, col uint8, border int) {
+	W := img.Rect.Dx()
+	H := img.Rect.Dy()
+	stride := img.Stride
+	pix := img.Pix
 	for bx := 0; bx < border; bx++ {
-		for i := x; i < x+w; i++ {
-			if i >= 0 && i < img.Rect.Dx() {
-				if y+bx < img.Rect.Dy() {
-					img.SetGray(i, y+bx, color.Gray{Y: col})
-				}
-				if y+h-1-bx >= 0 && y+h-1-bx < img.Rect.Dy() {
-					img.SetGray(i, y+h-1-bx, color.Gray{Y: col})
-				}
+		yt := y + bx
+		yb := y + h - 1 - bx
+		if yt >= 0 && yt < H {
+			off := yt * stride
+			xs := x
+			if xs < 0 {
+				xs = 0
+			}
+			xe := x + w
+			if xe > W {
+				xe = W
+			}
+			for i := xs; i < xe; i++ {
+				pix[off+i] = col
 			}
 		}
-		for j := y; j < y+h; j++ {
-			if j >= 0 && j < img.Rect.Dy() {
-				if x+bx < img.Rect.Dx() {
-					img.SetGray(x+bx, j, color.Gray{Y: col})
-				}
-				if x+w-1-bx >= 0 && x+w-1-bx < img.Rect.Dx() {
-					img.SetGray(x+w-1-bx, j, color.Gray{Y: col})
-				}
+		if yb >= 0 && yb < H && yb != yt {
+			off := yb * stride
+			xs := x
+			if xs < 0 {
+				xs = 0
+			}
+			xe := x + w
+			if xe > W {
+				xe = W
+			}
+			for i := xs; i < xe; i++ {
+				pix[off+i] = col
+			}
+		}
+		xt := x + bx
+		xr := x + w - 1 - bx
+		if xt >= 0 && xt < W {
+			ys := y
+			if ys < 0 {
+				ys = 0
+			}
+			ye := y + h
+			if ye > H {
+				ye = H
+			}
+			for j := ys; j < ye; j++ {
+				pix[j*stride+xt] = col
+			}
+		}
+		if xr >= 0 && xr < W && xr != xt {
+			ys := y
+			if ys < 0 {
+				ys = 0
+			}
+			ye := y + h
+			if ye > H {
+				ye = H
+			}
+			for j := ys; j < ye; j++ {
+				pix[j*stride+xr] = col
 			}
 		}
 	}
 }
 
 func fillRect(img *image.Gray, x, y, w, h int, col uint8) {
-	for j := y; j < y+h; j++ {
-		for i := x; i < x+w; i++ {
-			if i >= 0 && i < img.Rect.Dx() && j >= 0 && j < img.Rect.Dy() {
-				img.SetGray(i, j, color.Gray{Y: col})
-			}
-		}
+	W := img.Rect.Dx()
+	H := img.Rect.Dy()
+	if x < 0 {
+		w += x
+		x = 0
+	}
+	if y < 0 {
+		h += y
+		y = 0
+	}
+	if x+w > W {
+		w = W - x
+	}
+	if y+h > H {
+		h = H - y
+	}
+	if w <= 0 || h <= 0 {
+		return
+	}
+	stride := img.Stride
+	pix := img.Pix
+	// 首行填充后按行拷贝 (比逐像素快)
+	firstOff := y*stride + x
+	for i := 0; i < w; i++ {
+		pix[firstOff+i] = col
+	}
+	for j := 1; j < h; j++ {
+		off := (y+j)*stride + x
+		copy(pix[off:off+w], pix[firstOff:firstOff+w])
 	}
 }
 
@@ -181,23 +263,57 @@ var basicGlyphs = map[rune][]uint8{
 func drawChar(img *image.Gray, x, y int, ch rune, scale int, col uint8) int {
 	glyph, ok := basicGlyphs[ch]
 	if !ok {
-		chUpper := rune(strings.ToUpper(string(ch))[0])
-		glyph, ok = basicGlyphs[chUpper]
+		if ch >= 'a' && ch <= 'z' {
+			ch -= 32
+		}
+		glyph, ok = basicGlyphs[ch]
 		if !ok {
 			glyph = basicGlyphs[' ']
 		}
 	}
+	W := img.Rect.Dx()
+	H := img.Rect.Dy()
+	stride := img.Stride
+	pix := img.Pix
 	for row, b := range glyph {
+		if b == 0 {
+			continue
+		}
+		baseY := y + row*scale
 		for colIdx := 0; colIdx < 8; colIdx++ {
-			if (b & (0x80 >> colIdx)) != 0 {
-				for sx := 0; sx < scale; sx++ {
-					for sy := 0; sy < scale; sy++ {
-						px := x + colIdx*scale + sx
-						py := y + row*scale + sy
-						if px >= 0 && px < img.Rect.Dx() && py >= 0 && py < img.Rect.Dy() {
-							img.SetGray(px, py, color.Gray{Y: col})
-						}
+			if (b & (0x80 >> colIdx)) == 0 {
+				continue
+			}
+			baseX := x + colIdx*scale
+			for sy := 0; sy < scale; sy++ {
+				py := baseY + sy
+				if py < 0 || py >= H {
+					continue
+				}
+				off := py*stride + baseX
+				if baseX < 0 {
+					if baseX+scale <= 0 {
+						continue
 					}
+					// 左裁剪
+					start := -baseX
+					for sx := start; sx < scale; sx++ {
+						pix[off+sx] = col
+					}
+					continue
+				}
+				if baseX+scale > W {
+					end := W - baseX
+					if end <= 0 {
+						continue
+					}
+					for sx := 0; sx < end; sx++ {
+						pix[off+sx] = col
+					}
+					continue
+				}
+				for sx := 0; sx < scale; sx++ {
+					pix[off+sx] = col
 				}
 			}
 		}
@@ -559,7 +675,7 @@ func renderScreenSVG(data []StockData, width, height int) string {
 						shifted = append(shifted, x+","+y)
 					}
 				}
-				sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="%d" height="45" fill="none" stroke="black" stroke-width="1"/>`, gx, gy))
+				sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="420" height="45" fill="none" stroke="black" stroke-width="1"/>`, gx, gy))
 				sb.WriteString(fmt.Sprintf(`<polyline fill="none" stroke="black" stroke-width="1.5" points="%s"/>`, strings.Join(shifted, " ")))
 			}
 
@@ -621,7 +737,7 @@ func renderScreenSVG(data []StockData, width, height int) string {
 							shifted = append(shifted, x+","+y)
 						}
 					}
-					sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="%d" height="45" fill="none" stroke="black" stroke-width="1"/>`, gx, gy))
+					sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="420" height="45" fill="none" stroke="black" stroke-width="1"/>`, gx, gy))
 					sb.WriteString(fmt.Sprintf(`<polyline fill="none" stroke="black" stroke-width="1.5" points="%s"/>`, strings.Join(shifted, " ")))
 				}
 
