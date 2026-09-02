@@ -415,40 +415,54 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 
 	drawLine(img, 30, 128, width-30, 128, 0, 3)
 
-	// 分组数据
-	groups := make(map[string][]StockData)
-	for _, d := range data {
-		groups[d.Group] = append(groups[d.Group], d)
+	// 分页渲染: 超出部分留到下一页 (手势翻页)
+	pages := paginate(data, width, height)
+	totalPages := len(pages)
+	curPage := clampPage(totalPages)
+	var curBlocks []block
+	if totalPages > 0 && curPage < totalPages {
+		curBlocks = pages[curPage]
 	}
-
 	startY := 142
-
-	// 单组大视图模式 vs 全部概览模式
-	if effectiveGroup != "全部" && len(groups[effectiveGroup]) > 0 {
-		list := groups[effectiveGroup]
-		fillRect(img, 30, startY, width-60, 44, 0)
-		gTitle := fmt.Sprintf("=== %s ===", effectiveGroup)
-		DrawText(img, 45, startY+10, gTitle, 24, color.White)
-		startY += 52
-
-		cardH := 145
-		if len(list) <= 3 {
-			cardH = 175
-		} else if len(list) > 6 {
-			cardH = 110
+	// 辅助: 判断是否 pinned 组
+	isPinnedGroup := func(g string) bool {
+		if !isAuto || g == effectiveGroup {
+			return false
 		}
-
-		for _, item := range list {
+		for _, pg := range appConfig.PinnedGroups {
+			if pg == g {
+				return true
+			}
+		}
+		return false
+	}
+	for _, b := range curBlocks {
+		if b.isHeader {
+			if b.group == effectiveGroup && effectiveGroup != "全部" {
+				// 单组大标题
+				fillRect(img, 30, startY, width-60, 44, 0)
+				gTitle := fmt.Sprintf("=== %s ===", b.group)
+				DrawText(img, 45, startY+10, gTitle, 24, color.White)
+			} else {
+				fillRect(img, 30, startY, width-60, 38, 0)
+				DrawText(img, 45, startY+8, "[ "+b.group+" ]", 22, color.White)
+			}
+			startY += b.h
+			continue
+		}
+		// 卡片
+		item := b.data
+		isSingle := b.group == effectiveGroup && effectiveGroup != "全部"
+		pinned := isPinnedGroup(b.group)
+		if isSingle {
+			cardH := b.h - b.gap
 			drawRect(img, 30, startY, width-60, cardH, 0, 2)
-
-			// 中文名称 (32px 大字) 与 代码 (20px)
 			nameStr := item.Name
 			if nameStr == "" {
 				nameStr = item.Code
 			}
 			DrawText(img, 45, startY+18, nameStr, 32, color.Black)
 			DrawText(img, 45, startY+62, item.Code, 20, color.Gray{Y: 100})
-
 			arrow := " "
 			if item.Change > 0 {
 				arrow = "▲"
@@ -460,123 +474,88 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 				priceStr = fmt.Sprintf("%.2f", item.Price)
 			}
 			chgStr := fmt.Sprintf("%s %+.2f (%+.2f%%)", arrow, item.Change, item.Pct)
-
-			// 折线图 (大尺寸)
 			chartW := width - 490
 			chartH := cardH - 30
 			if len(item.Prices) > 2 {
 				drawSparklineGraph(img, item.Prices, 210, startY+15, chartW, chartH, item.Code)
 			}
-
 			priceW := MeasureText(priceStr, 38)
 			chgW := MeasureText(chgStr, 24)
 			DrawText(img, width-45-priceW, startY+16, priceStr, 38, color.Black)
 			DrawText(img, width-45-chgW, startY+64, chgStr, 24, color.Black)
-
-			startY += cardH + 10
-			if startY > height-100 {
-				break
+			startY += b.h
+		} else if pinned {
+			cardH := b.h - b.gap
+			drawRect(img, 30, startY, width-60, cardH, 0, 2)
+			nameStr := item.Name
+			if nameStr == "" {
+				nameStr = item.Code
 			}
-		}
-	} else {
-		for _, gName := range []string{"A股", "美股", "期货"} {
-			list, ok := groups[gName]
-			if !ok || len(list) == 0 {
-				continue
+			DrawText(img, 45, startY+14, nameStr, 26, color.Black)
+			DrawText(img, 45, startY+48, item.Code, 18, color.Gray{Y: 100})
+			arrow := " "
+			if item.Change > 0 {
+				arrow = "▲"
+			} else if item.Change < 0 {
+				arrow = "▼"
 			}
-			fillRect(img, 30, startY, width-60, 38, 0)
-			DrawText(img, 45, startY+8, "[ "+gName+" ]", 22, color.White)
-			startY += 44
-
-			for _, item := range list {
-				cardH := 95
-				drawRect(img, 30, startY, width-60, cardH, 0, 2)
-
-				nameStr := item.Name
-				if nameStr == "" {
-					nameStr = item.Code
-				}
-				DrawText(img, 45, startY+14, nameStr, 26, color.Black)
-				DrawText(img, 45, startY+50, item.Code, 18, color.Gray{Y: 100})
-
-				arrow := " "
-				if item.Change > 0 {
-					arrow = "▲"
-				} else if item.Change < 0 {
-					arrow = "▼"
-				}
-				priceStr := "--"
-				if item.Price > 0 {
-					priceStr = fmt.Sprintf("%.2f", item.Price)
-				}
-				chgStr := fmt.Sprintf("%s %+.2f (%+.2f%%)", arrow, item.Change, item.Pct)
-
-				if len(item.Prices) > 2 {
-					drawSparklineGraph(img, item.Prices, 240, startY+12, 440, 70, item.Code)
-				}
-
-				priceW := MeasureText(priceStr, 34)
-				chgW := MeasureText(chgStr, 20)
-				DrawText(img, width-45-priceW, startY+14, priceStr, 34, color.Black)
-				DrawText(img, width-45-chgW, startY+52, chgStr, 20, color.Black)
-
-				startY += cardH + 8
-				if startY > height-100 {
-					break
-				}
+			priceStr := "--"
+			if item.Price > 0 {
+				priceStr = fmt.Sprintf("%.2f", item.Price)
 			}
-			startY += 8
+			chgStr := fmt.Sprintf("%s %+.2f (%+.2f%%)", arrow, item.Change, item.Pct)
+			priceW := MeasureText(priceStr, 34)
+			chgW := MeasureText(chgStr, 20)
+			DrawText(img, width-45-priceW, startY+14, priceStr, 34, color.Black)
+			DrawText(img, width-45-chgW, startY+50, chgStr, 20, color.Black)
+			startY += b.h
+		} else {
+			cardH := b.h - b.gap
+			drawRect(img, 30, startY, width-60, cardH, 0, 2)
+			nameStr := item.Name
+			if nameStr == "" {
+				nameStr = item.Code
+			}
+			DrawText(img, 45, startY+14, nameStr, 26, color.Black)
+			DrawText(img, 45, startY+50, item.Code, 18, color.Gray{Y: 100})
+			arrow := " "
+			if item.Change > 0 {
+				arrow = "▲"
+			} else if item.Change < 0 {
+				arrow = "▼"
+			}
+			priceStr := "--"
+			if item.Price > 0 {
+				priceStr = fmt.Sprintf("%.2f", item.Price)
+			}
+			chgStr := fmt.Sprintf("%s %+.2f (%+.2f%%)", arrow, item.Change, item.Pct)
+			if len(item.Prices) > 2 {
+				drawSparklineGraph(img, item.Prices, 240, startY+12, 440, 70, item.Code)
+			}
+			priceW := MeasureText(priceStr, 34)
+			chgW := MeasureText(chgStr, 20)
+			DrawText(img, width-45-priceW, startY+14, priceStr, 34, color.Black)
+			DrawText(img, width-45-chgW, startY+52, chgStr, 20, color.Black)
+			startY += b.h
 		}
 	}
-
-	if isAuto && effectiveGroup != "全部" {
-		for _, pg := range appConfig.PinnedGroups {
-			if pg == effectiveGroup {
-				continue
-			}
-			futs, ok := groups[pg]
-			if !ok || len(futs) == 0 {
-				continue
-			}
-			fillRect(img, 30, startY, width-60, 38, 0)
-			DrawText(img, 45, startY+8, "[ "+pg+" ]", 22, color.White)
-			startY += 44
-			for _, f := range futs {
-				if startY > height-100 {
-					break
-				}
-				cardH := 85
-				drawRect(img, 30, startY, width-60, cardH, 0, 2)
-				nameStr := f.Name
-				if nameStr == "" {
-					nameStr = f.Code
-				}
-				DrawText(img, 45, startY+14, nameStr, 26, color.Black)
-				DrawText(img, 45, startY+48, f.Code, 18, color.Gray{Y: 100})
-				arrow := " "
-				if f.Change > 0 {
-					arrow = "▲"
-				} else if f.Change < 0 {
-					arrow = "▼"
-				}
-				priceStr := "--"
-				if f.Price > 0 {
-					priceStr = fmt.Sprintf("%.2f", f.Price)
-				}
-				chgStr := fmt.Sprintf("%s %+.2f (%+.2f%%)", arrow, f.Change, f.Pct)
-				priceW := MeasureText(priceStr, 34)
-				chgW := MeasureText(chgStr, 20)
-				DrawText(img, width-45-priceW, startY+14, priceStr, 34, color.Black)
-				DrawText(img, width-45-chgW, startY+50, chgStr, 20, color.Black)
-				startY += cardH + 8
-			}
+	// 页码指示 (多页时显示在分隔线上方居中, 上下翻页直觉)
+	if totalPages > 1 {
+		indicator := fmt.Sprintf("%d / %d", curPage+1, totalPages)
+		if curPage > 0 {
+			indicator = "▲ " + indicator
 		}
+		if curPage+1 < totalPages {
+			indicator = indicator + " ▼"
+		}
+		iw := MeasureText(indicator, 18)
+		DrawText(img, (width-iw)/2, height-40, indicator, 18, color.Gray{Y: 80})
 	}
 
 	// 底部状态栏: 左侧提示 + 右侧时间电量同一行
 	statusStr := FormatStatusBar()
 	drawLine(img, 30, height-58, width-30, height-58, 0, 1)
-	DrawText(img, 30, height-24, "点击右上角 [X] 退出 | 点击顶部 Tab 切换视图", 18, color.Gray{Y: 120})
+	DrawText(img, 30, height-24, "左右滑动切Tab | 上下滑动翻页 | [X]退出", 18, color.Gray{Y: 120})
 	statusW := MeasureText(statusStr, 18)
 	DrawText(img, width-30-statusW, height-24, statusStr, 18, color.Black)
 	return img

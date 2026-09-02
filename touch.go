@@ -55,6 +55,16 @@ func SetViewMode(mode string) {
 	viewModeMu.Lock()
 	currentViewMode = mode
 	viewModeMu.Unlock()
+	ResetPage()
+	screenDiffer.ClearDiffCache()
+	select {
+	case triggerRefreshCh <- true:
+	default:
+	}
+}
+
+func triggerPageRefresh() {
+	screenDiffer.ClearDiffCache()
 	select {
 	case triggerRefreshCh <- true:
 	default:
@@ -164,7 +174,8 @@ func startTouchListener(screenWidth, screenHeight int) {
 	log.Printf("Touch listener active on %s (Resolution: %dx%d)", devPath, screenWidth, screenHeight)
 
 	buf := make([]byte, 16)
-	var curX, curY int
+	var curX, curY, startX, startY int
+	var startTime time.Time
 	touching := false
 
 	handleTap := func(x, y int) {
@@ -191,8 +202,41 @@ func startTouchListener(screenWidth, screenHeight int) {
 			return
 		}
 
-		// 3. 底部点击触发立即刷新 (y > screenHeight - 100)
+		// 3. 底部点击触发立即刷新 (y > screenHeight - 100) — 保留但与翻页手势区分
 		if y >= screenHeight-100 {
+			// 底部左右分區: 左1/3 上一页, 右1/3 下一页, 中间刷新
+			if x < screenWidth/3 {
+				if PrevPage() {
+					log.Printf("Prev page -> %d", GetCurrentPage()+1)
+					triggerPageRefresh()
+				}
+				return
+			}
+			if x > screenWidth*2/3 {
+				// 计算总页数 (基于缓存数据)
+				var total int
+				cacheMutex.RLock()
+				if len(cachedData) > 0 {
+					total = GetTotalPages(cachedData, screenWidth, screenHeight)
+				} else {
+					total = GetTotalPages(neededStocksData(), screenWidth, screenHeight)
+				}
+				cacheMutex.RUnlock()
+				if total == 0 {
+					total = 1
+				}
+				if NextPage(total) {
+					log.Printf("Next page -> %d/%d", GetCurrentPage()+1, total)
+					triggerPageRefresh()
+				} else {
+					log.Println("Bottom touched: triggering refresh")
+					select {
+					case triggerRefreshCh <- true:
+					default:
+					}
+				}
+				return
+			}
 			log.Println("Bottom touched: Triggering immediate refresh...")
 			select {
 			case triggerRefreshCh <- true:
@@ -200,6 +244,77 @@ func startTouchListener(screenWidth, screenHeight int) {
 			}
 			return
 		}
+	}
+
+	handleSwipe := func(sx, sy, ex, ey int, dur time.Duration) bool {
+		dx := ex - sx
+		dy := ey - sy
+		adx := dx
+		if adx < 0 {
+			adx = -adx
+		}
+		ady := dy
+		if ady < 0 {
+			ady = -ady
+		}
+		if dur > 800*time.Millisecond {
+			return false
+		}
+		// 垂直滑动 -> 翻页 (上下更直觉), 阈值 >80 且主导
+		if ady > 80 && ady > adx*3/2 {
+			var total int
+			cacheMutex.RLock()
+			if len(cachedData) > 0 {
+				total = GetTotalPages(cachedData, screenWidth, screenHeight)
+			} else {
+				total = GetTotalPages(neededStocksData(), screenWidth, screenHeight)
+			}
+			cacheMutex.RUnlock()
+			if total <= 1 {
+				return false
+			}
+			if dy < 0 {
+				// 上滑 -> 下一页 (内容上移)
+				if NextPage(total) {
+					log.Printf("Swipe up: next page %d/%d", GetCurrentPage()+1, total)
+					triggerPageRefresh()
+					return true
+				}
+			} else {
+				// 下滑 -> 上一页
+				if PrevPage() {
+					log.Printf("Swipe down: prev page %d/%d", GetCurrentPage()+1, total)
+					triggerPageRefresh()
+					return true
+				}
+			}
+			return false
+		}
+		// 水平滑动 -> 切 Tab (左右更直觉)
+		if adx > 80 && adx > ady*3/2 {
+			tabs := []string{"AUTO", "A股", "美股", "期货", "全部"}
+			cur := GetViewMode()
+			idx := 0
+			for i, t := range tabs {
+				if t == cur {
+					idx = i
+					break
+				}
+			}
+			if dx < 0 {
+				// 左滑 -> 下一个 Tab
+				next := tabs[(idx+1)%len(tabs)]
+				log.Printf("Swipe left: tab %s -> %s", cur, next)
+				SetViewMode(next)
+				return true
+			}
+			// 右滑 -> 上一个 Tab
+			prev := tabs[(idx-1+len(tabs))%len(tabs)]
+			log.Printf("Swipe right: tab %s -> %s", cur, prev)
+			SetViewMode(prev)
+			return true
+		}
+		return false
 	}
 
 	for {
@@ -228,11 +343,26 @@ func startTouchListener(screenWidth, screenHeight int) {
 		} else if evType == EV_KEY && evCode == BTN_TOUCH {
 			if evVal == 1 {
 				touching = true
+				startX, startY = curX, curY
+				startTime = time.Now()
 			} else if evVal == 0 && touching {
 				touching = false
+				if curX == 0 && curY == 0 {
+					curX, curY = startX, startY
+				}
+				// 优先判定滑动翻页 (水平滑动 >80px)
+				if !startTime.IsZero() {
+					if handleSwipe(startX, startY, curX, curY, time.Since(startTime)) {
+						startX, startY = 0, 0
+						startTime = time.Time{}
+						continue
+					}
+				}
 				if curX > 0 && curY > 0 {
 					go handleTap(curX, curY)
 				}
+				startX, startY = 0, 0
+				startTime = time.Time{}
 			}
 		}
 	}
