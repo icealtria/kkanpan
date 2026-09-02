@@ -38,6 +38,7 @@ type AppConfig struct {
 	PinnedGroups   []string       `json:"pinnedGroups"`   // AUTO 时常驻的组
 	AutoRules      []AutoRule     `json:"autoRules"`      // 按顺序匹配，09:00-15:30 格式
 	TradingMinutes map[string]int `json:"tradingMinutes"` // code/分组 -> 分钟数
+	DefaultView    string         `json:"defaultView"`    // 默认显示组, 留空则 AUTO 或首个分组
 }
 
 var appConfig AppConfig
@@ -96,4 +97,45 @@ func tradingMinutes(code string) int {
 		}
 	}
 	return 0
+}
+
+// GetAllGroups 返回 stocks.json 中去重后的分组, 保持首次出现顺序
+func GetAllGroups() []string {
+	seen := make(map[string]bool)
+	var out []string
+	for _, s := range loadStocks() {
+		if !seen[s.Group] {
+			seen[s.Group] = true
+			out = append(out, s.Group)
+		}
+	}
+	return out
+}
+
+// GetTabModes 返回 Tab 栏完整列表: AUTO(按需) + 分组 + ALL
+func GetTabModes() []string {
+	groups := GetAllGroups()
+	hasAuto := len(appConfig.AutoRules) > 0 || len(appConfig.PinnedGroups) > 0
+	tabs := make([]string, 0, len(groups)+2)
+	if hasAuto {
+		tabs = append(tabs, "AUTO")
+	}
+	tabs = append(tabs, groups...)
+	tabs = append(tabs, "ALL")
+	return tabs
+}
+
+// GetDefaultView 返回配置文件中的默认视图, 未配置则回落 AUTO 或首分组
+func GetDefaultView() string {
+	if appConfig.DefaultView != "" {
+		return appConfig.DefaultView
+	}
+	if len(appConfig.AutoRules) > 0 || len(appConfig.PinnedGroups) > 0 {
+		return "AUTO"
+	}
+	groups := GetAllGroups()
+	if len(groups) > 0 {
+		return groups[0]
+	}
+	return "ALL"
 }

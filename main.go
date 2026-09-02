@@ -7,21 +7,25 @@ import (
 )
 
 func main() {
-	port := flag.Int("port", 8000, "HTTP 端口 (需配合 -http)")
-	host := flag.String("host", "0.0.0.0", "HTTP 监听地址")
-	interval := flag.Int("interval", 60, "屏幕刷新间隔(秒)")
-	width := flag.Int("width", 1072, "KPW3屏幕宽度")
-	height := flag.Int("height", 1448, "KPW3屏幕高度")
-	eips := flag.Bool("eips", true, "是否启用 eips 墨水屏直接刷屏 (默认开启)")
-	once := flag.Bool("once", false, "执行一次刷新并退出 (适合深度休眠脚本)")
-	web := flag.Bool("http", false, "是否开启 HTTP 网页服务 (默认关闭，Kindle 本机原生优先)")
-	initialView := flag.String("view", "AUTO", "初始视图模式 (AUTO, A股, 美股, 期货, 全部)")
+	port := flag.Int("port", 8000, "HTTP port (requires -http)")
+	host := flag.String("host", "0.0.0.0", "HTTP listen addr")
+	interval := flag.Int("interval", 60, "refresh interval (seconds)")
+	width := flag.Int("width", 1072, "screen width (KPW3)")
+	height := flag.Int("height", 1448, "screen height (KPW3)")
+	eips := flag.Bool("eips", true, "enable eips direct e-ink refresh (default on)")
+	once := flag.Bool("once", false, "single refresh and exit (for deep sleep script)")
+	web := flag.Bool("http", false, "enable HTTP server (off by default)")
+	initialView := flag.String("view", "", "initial view mode (AUTO, ALL or group from stocks.json, default from app.json)")
 	flag.Parse()
 
 	appConfig = loadAppConfig()
 	initClients()
-	SetViewMode(*initialView)
-	log.Printf("Starting kkanpan for Kindle KPW3 (ViewMode: %s)...", *initialView)
+	view := *initialView
+	if view == "" {
+		view = GetDefaultView()
+	}
+	SetViewMode(view)
+	log.Printf("Starting kkanpan for Kindle KPW3 (ViewMode: %s)...", view)
 
 	// 共存模式: 不杀 framework, 通过 pillow+awesome+wmctrl+statusbar 屏蔽状态栏 (KOReader 同款, 退出不重启)
 	DisableCoexistMode()

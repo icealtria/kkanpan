@@ -1,17 +1,17 @@
 {
   "proxy": "http://127.0.0.1:7890",
   "cacheTTL": 55,
-  "pinnedGroups": ["期货"],
+  "defaultView": "AUTO",
+  "pinnedGroups": ["futures"],
   "autoRules": [
-    {"group": "A股", "weekdays": [1, 2, 3, 4, 5], "start": "09:00", "end": "15:30"},
-    {"group": "美股", "weekdays": [1, 2, 3, 4, 5], "start": "16:00", "end": "08:00"},
-    {"group": "美股", "weekdays": [6], "start": "00:00", "end": "06:00"},
-    {"group": "全部", "weekdays": [], "start": "00:00", "end": "23:59"}
+    {"group": "a-share", "weekdays": [1, 2, 3, 4, 5], "start": "09:00", "end": "15:30"},
+    {"group": "US", "weekdays": [1, 2, 3, 4, 5], "start": "16:00", "end": "23:59"},
+    {"group": "US", "weekdays": [2, 3, 4, 5, 6], "start": "00:00", "end": "08:00"}
   ],
   "tradingMinutes": {
-    "A股": 240,
-    "美股": 390,
-    "期货": 1440,
+    "a-share": 240,
+    "US": 390,
+    "futures": 1440,
     "sh000001": 240
   }
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 	"log"
+	"math"
 	"os"
 	"os/exec"
 	"strconv"
@@ -39,7 +40,7 @@ const (
 )
 
 var (
-	currentViewMode  = "AUTO" // AUTO, A股, 美股, 期货, 全部
+	currentViewMode = "AUTO" // AUTO, ALL or any group from stocks.json
 	viewModeMu       sync.RWMutex
 	triggerRefreshCh = make(chan bool, 1)
 	grabbedDevFile   *os.File
@@ -127,7 +128,7 @@ func GetEffectiveGroup(mode string) (groupName string, isAuto bool) {
 		return mode, false
 	}
 	if len(appConfig.AutoRules) == 0 {
-		return "全部", true
+		return "", true
 	}
 	loc := time.FixedZone("CST", 8*3600)
 	now := time.Now().In(loc)
@@ -136,7 +137,7 @@ func GetEffectiveGroup(mode string) (groupName string, isAuto bool) {
 			return r.Group, true
 		}
 	}
-	return "全部", true
+	return "", true
 }
 
 func startTouchListener(screenWidth, screenHeight int) {
@@ -188,13 +189,13 @@ func startTouchListener(screenWidth, screenHeight int) {
 			return
 		}
 
-		// 2. 顶部 Tab 栏判定 (y: 60 ~ 135)
+		// 2. 顶部 Tab 栏判定 (y: 60 ~ 135) — 动态 Tab
 		if y >= 60 && y <= 135 {
+			modes := GetTabModes()
 			tabTotalW := screenWidth - 60
-			tabCount := 5
+			tabCount := len(modes)
 			tabW := tabTotalW / tabCount
 			idx := (x - 30) / tabW
-			modes := []string{"AUTO", "A股", "美股", "期货", "全部"}
 			if idx >= 0 && idx < len(modes) {
 				log.Printf("Switched view mode to: %s", modes[idx])
 				SetViewMode(modes[idx])
@@ -257,11 +258,25 @@ func startTouchListener(screenWidth, screenHeight int) {
 		if ady < 0 {
 			ady = -ady
 		}
-		if dur > 800*time.Millisecond {
+		if dur > 700*time.Millisecond || dur < 80*time.Millisecond {
 			return false
 		}
-		// 垂直滑动 -> 翻页 (上下更直觉), 阈值 >80 且主导
-		if ady > 80 && ady > adx*3/2 {
+		// 轻触容差: KOReader PAN_THRESHOLD≈63px@300ppi, 漂移<12px视为tap不判swipe
+		if adx < 12 && ady < 12 {
+			return false
+		}
+		// 速度 = 欧氏距离 / 时长, 需 >0.4px/ms (400px/s) 才算有意滑动, 过滤慢拖误触
+		dist := math.Sqrt(float64(dx*dx + dy*dy))
+		ms := float64(dur.Milliseconds())
+		if ms < 1 {
+			ms = 1
+		}
+		velocity := dist / ms // px/ms
+		if velocity < 0.4 {
+			return false
+		}
+		// 垂直滑动 -> 翻页
+		if ady > 120 && ady > adx*2 {
 			var total int
 			cacheMutex.RLock()
 			if len(cachedData) > 0 {
@@ -290,9 +305,9 @@ func startTouchListener(screenWidth, screenHeight int) {
 			}
 			return false
 		}
-		// 水平滑动 -> 切 Tab (左右更直觉)
-		if adx > 80 && adx > ady*3/2 {
-			tabs := []string{"AUTO", "A股", "美股", "期货", "全部"}
+		// 水平滑动 -> 切 Tab (动态, 非硬编码)
+		if adx > 120 && adx > ady*2 {
+			tabs := GetTabModes()
 			cur := GetViewMode()
 			idx := 0
 			for i, t := range tabs {

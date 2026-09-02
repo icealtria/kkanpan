@@ -368,7 +368,7 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 	// 顶部 Header (加大字号适配 300ppi 墨水屏)
 	modeTag := fmt.Sprintf("[%s]", viewMode)
 	if isAuto {
-		modeTag = fmt.Sprintf("[自动: %s]", effectiveGroup)
+		modeTag = fmt.Sprintf("[AUTO: %s]", effectiveGroup)
 	}
 	DrawText(img, 30, 16, "KKANPAN", 32, color.Black)
 	DrawText(img, width-460, 20, modeTag, 24, color.Black)
@@ -377,16 +377,11 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 	drawRect(img, width-95, 10, 65, 46, 0, 3)
 	DrawText(img, width-72, 18, "X", 26, color.Black)
 
-	// 绘制 5 个触控交互 Tab 栏 (Y: 68 ~ 118，高 50px，字号 24px)
-	tabs := []struct {
-		Key   string
-		Label string
-	}{
-		{"AUTO", "自动"},
-		{"A股", "A股"},
-		{"美股", "美股"},
-		{"期货", "期货"},
-		{"全部", "全部"},
+	// 绘制触控 Tab 栏 (动态, 非硬编码)
+	modes := GetTabModes()
+	tabs := make([]struct{ Key, Label string }, len(modes))
+	for i, m := range modes {
+		tabs[i] = struct{ Key, Label string }{m, m}
 	}
 
 	tabCount := len(tabs)
@@ -438,7 +433,7 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 	}
 	for _, b := range curBlocks {
 		if b.isHeader {
-			if b.group == effectiveGroup && effectiveGroup != "全部" {
+			if b.group == effectiveGroup && effectiveGroup != "ALL" {
 				// 单组大标题
 				fillRect(img, 30, startY, width-60, 44, 0)
 				gTitle := fmt.Sprintf("=== %s ===", b.group)
@@ -452,7 +447,7 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 		}
 		// 卡片
 		item := b.data
-		isSingle := b.group == effectiveGroup && effectiveGroup != "全部"
+		isSingle := b.group == effectiveGroup && effectiveGroup != "ALL"
 		pinned := isPinnedGroup(b.group)
 		if isSingle {
 			cardH := b.h - b.gap
@@ -555,7 +550,7 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 	// 底部状态栏: 左侧提示 + 右侧时间电量同一行
 	statusStr := FormatStatusBar()
 	drawLine(img, 30, height-58, width-30, height-58, 0, 1)
-	DrawText(img, 30, height-24, "左右滑动切Tab | 上下滑动翻页 | [X]退出", 18, color.Gray{Y: 120})
+	DrawText(img, 30, height-24, "Swipe H: switch Tab | Swipe V: flip | Tap [X] exit", 18, color.Gray{Y: 120})
 	statusW := MeasureText(statusStr, 18)
 	DrawText(img, width-30-statusW, height-24, statusStr, 18, color.Black)
 	return img
@@ -580,16 +575,11 @@ func renderScreenSVG(data []StockData, width, height int) string {
 	// 右上角 [X] 关闭按钮
 	sb.WriteString(fmt.Sprintf(`<a href="/exit"><rect x="%d" y="10" width="45" height="34" fill="white" stroke="black" stroke-width="2"/><text x="%d" y="34" font-family="monospace" font-size="20" font-weight="bold" text-anchor="middle">X</text></a>`, width-75, width-52))
 
-	// Tab 栏
-	tabs := []struct {
-		Key   string
-		Label string
-	}{
-		{"AUTO", "AUTO"},
-		{"A股", "A-SHARE"},
-		{"美股", "US-STOCK"},
-		{"期货", "FUTURES"},
-		{"全部", "ALL"},
+	// Tab 栏 (动态)
+	modes := GetTabModes()
+	tabs := make([]struct{ Key, Label string }, len(modes))
+	for i, m := range modes {
+		tabs[i] = struct{ Key, Label string }{m, m}
 	}
 	tabCount := len(tabs)
 	tabGap := 8
@@ -616,7 +606,7 @@ func renderScreenSVG(data []StockData, width, height int) string {
 	}
 
 	startY := 110
-	if effectiveGroup != "全部" && len(groups[effectiveGroup]) > 0 {
+	if effectiveGroup != "ALL" && len(groups[effectiveGroup]) > 0 {
 		list := groups[effectiveGroup]
 		sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="36" fill="black"/>`, startY, width-60))
 		sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="18" fill="white">=== %s FOCUS VIEW (%d STOCKS) ===</text>`, startY+24, effectiveGroup, len(list)))
@@ -667,21 +657,13 @@ func renderScreenSVG(data []StockData, width, height int) string {
 			}
 		}
 	} else {
-		for _, gName := range []string{"A股", "美股", "期货"} {
+		for _, gName := range GetAllGroups() {
 			list, ok := groups[gName]
 			if !ok || len(list) == 0 {
 				continue
 			}
-			gLabel := gName
-			if gName == "A股" {
-				gLabel = "A-SHARE"
-			} else if gName == "美股" {
-				gLabel = "US-STOCK"
-			} else if gName == "期货" {
-				gLabel = "FUTURES"
-			}
 			sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="32" fill="black"/>`, startY, width-60))
-			sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="16" fill="white">[ %s ]</text>`, startY+22, gLabel))
+			sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="16" fill="white">[ %s ]</text>`, startY+22, gName))
 			startY += 38
 
 			for _, item := range list {
@@ -732,7 +714,7 @@ func renderScreenSVG(data []StockData, width, height int) string {
 		}
 	}
 
-	if isAuto && effectiveGroup != "全部" {
+	if isAuto && effectiveGroup != "ALL" {
 		for _, pg := range appConfig.PinnedGroups {
 			if pg == effectiveGroup {
 				continue

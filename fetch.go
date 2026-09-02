@@ -58,12 +58,29 @@ func initClients() {
 var cacheTTL int64 = 55
 var qtRe = regexp.MustCompile(`v_(\w+)="([^"]*)"`)
 
-// neededStocks 按当前 Tab 只返回需要拉取的配置 (KOReader 式按需, 省 60%+ 请求)
+// neededStocks 按当前 Tab 只返回需要拉取的配置 (AUTO 未命中则仅常驻组)
 func neededStocks() []StockConfig {
 	all := loadStocks()
 	mode := GetViewMode()
 	eff, isAuto := GetEffectiveGroup(mode)
-	if eff == "全部" {
+	if eff == "" {
+		if !isAuto || len(appConfig.PinnedGroups) == 0 {
+			return nil
+		}
+		// AUTO 空档期仍显示常驻组
+		want := make(map[string]bool, len(appConfig.PinnedGroups))
+		for _, pg := range appConfig.PinnedGroups {
+			want[pg] = true
+		}
+		var out []StockConfig
+		for _, c := range all {
+			if want[c.Group] {
+				out = append(out, c)
+			}
+		}
+		return out
+	}
+	if eff == "ALL" {
 		return all
 	}
 	want := map[string]bool{eff: true}
@@ -79,9 +96,6 @@ func neededStocks() []StockConfig {
 		if want[c.Group] {
 			out = append(out, c)
 		}
-	}
-	if len(out) == 0 {
-		return all
 	}
 	return out
 }
@@ -412,6 +426,9 @@ func refreshData() []StockData {
 
 func getData() []StockData {
 	needed := neededStocks()
+	if len(needed) == 0 {
+		return nil // AUTO 未命中 -> 空
+	}
 	needSet := make(map[string]bool, len(needed))
 	for _, c := range needed {
 		needSet[c.Code] = true

@@ -32,7 +32,24 @@ func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 		groups[d.Group] = append(groups[d.Group], d)
 	}
 	var blocks []block
-	if effectiveGroup != "全部" && len(groups[effectiveGroup]) > 0 {
+	if effectiveGroup == "" {
+		if !isAuto || len(appConfig.PinnedGroups) == 0 {
+			return nil // 真正空屏
+		}
+		// AUTO 空档期仅显示常驻组
+		for _, pg := range appConfig.PinnedGroups {
+			futs, ok := groups[pg]
+			if !ok || len(futs) == 0 {
+				continue
+			}
+			blocks = append(blocks, block{isHeader: true, group: pg, h: 44, gap: 6})
+			for _, f := range futs {
+				blocks = append(blocks, block{isHeader: false, group: pg, data: f, h: 93, gap: 8})
+			}
+		}
+		return blocks
+	}
+	if effectiveGroup != "ALL" && len(groups[effectiveGroup]) > 0 {
 		list := groups[effectiveGroup]
 		blocks = append(blocks, block{isHeader: true, group: effectiveGroup, h: 52, gap: 8}) // 44+8
 		cardH := 145
@@ -59,8 +76,8 @@ func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 				}
 			}
 		}
-	} else {
-		for _, gName := range []string{"A股", "美股", "期货"} {
+	} else if effectiveGroup == "ALL" {
+		for _, gName := range GetAllGroups() {
 			list, ok := groups[gName]
 			if !ok || len(list) == 0 {
 				continue
