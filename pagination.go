@@ -37,6 +37,16 @@ func appendGroup(blocks []block, group string, list []StockData, cardH int) []bl
 	return blocks
 }
 
+func largeCardH(n int) int {
+	if n <= 3 {
+		return 175
+	}
+	if n > 6 {
+		return 110
+	}
+	return 145
+}
+
 func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 	groups := make(map[string][]StockData)
 	for _, d := range data {
@@ -45,42 +55,45 @@ func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 	style := GetStyleMode()
 	var blocks []block
 	if effectiveGroup == "" {
-		if !isAuto || len(appConfig.PinnedGroups) == 0 {
-			return nil
-		}
-		for _, pg := range appConfig.PinnedGroups {
-			blocks = appendGroup(blocks, pg, groups[pg], 103)
+		return nil
+	}
+	if effectiveGroup == "ALL" {
+		for _, gName := range GetAllGroups() {
+			blocks = appendGroup(blocks, gName, groups[gName], 103)
 		}
 		return blocks
 	}
-	if effectiveGroup != "ALL" && len(groups[effectiveGroup]) > 0 {
-		if style == "large" {
-			// 恢复 5e7f0ae 之前的大卡逻辑
-			list := groups[effectiveGroup]
-			blocks = append(blocks, block{isHeader: true, group: effectiveGroup, h: 52, gap: 8})
-			cardH := 145
-			if len(list) <= 3 {
-				cardH = 175
-			} else if len(list) > 6 {
-				cardH = 110
+	if isAuto {
+		matching := GetMatchingAutoGroups()
+		if len(matching) == 0 {
+			return nil
+		}
+		for _, g := range matching {
+			list := groups[g]
+			if len(list) == 0 {
+				continue
 			}
-			for _, it := range list {
+			if style == "large" {
+				cardH := largeCardH(len(list))
+				blocks = append(blocks, block{isHeader: true, group: g, h: 44, gap: 6})
+				for _, it := range list {
+					blocks = append(blocks, block{isHeader: false, group: g, data: it, h: cardH + 10, gap: 10})
+				}
+			} else {
+				blocks = appendGroup(blocks, g, list, 103)
+			}
+		}
+		return blocks
+	}
+	if len(groups[effectiveGroup]) > 0 {
+		if style == "large" {
+			cardH := largeCardH(len(groups[effectiveGroup]))
+			blocks = append(blocks, block{isHeader: true, group: effectiveGroup, h: 44, gap: 6})
+			for _, it := range groups[effectiveGroup] {
 				blocks = append(blocks, block{isHeader: false, group: effectiveGroup, data: it, h: cardH + 10, gap: 10})
 			}
 		} else {
 			blocks = appendGroup(blocks, effectiveGroup, groups[effectiveGroup], 103)
-		}
-		if isAuto {
-			for _, pg := range appConfig.PinnedGroups {
-				if pg == effectiveGroup {
-					continue
-				}
-				blocks = appendGroup(blocks, pg, groups[pg], 103)
-			}
-		}
-	} else if effectiveGroup == "ALL" {
-		for _, gName := range GetAllGroups() {
-			blocks = appendGroup(blocks, gName, groups[gName], 103)
 		}
 	}
 	return blocks

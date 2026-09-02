@@ -33,11 +33,10 @@ type AutoRule struct {
 }
 
 type AppConfig struct {
-	Proxy        string     `json:"proxy"`        // "http://127.0.0.1:7890" 可空
-	CacheTTL     int64      `json:"cacheTTL"`     // 秒
-	PinnedGroups []string   `json:"pinnedGroups"` // AUTO 时常驻的组
-	AutoRules    []AutoRule `json:"autoRules"`    // 按顺序匹配，09:00-15:30 格式
-	DefaultView  string     `json:"defaultView"`  // 默认显示组, 留空则 AUTO 或首个分组
+	Proxy       string     `json:"proxy"`     // "http://127.0.0.1:7890" 可空
+	CacheTTL    int64      `json:"cacheTTL"`  // 秒
+	AutoRules   []AutoRule `json:"autoRules"` // 按顺序匹配，09:00-15:30 格式
+	DefaultView string     `json:"defaultView"` // 默认显示组, 留空则 AUTO 或首个分组
 }
 
 var appConfig AppConfig
@@ -94,7 +93,7 @@ func GetAllGroups() []string {
 
 func GetTabModes() []string {
 	groups := GetAllGroups()
-	hasAuto := len(appConfig.AutoRules) > 0 || len(appConfig.PinnedGroups) > 0
+	hasAuto := len(appConfig.AutoRules) > 0
 	tabs := make([]string, 0, len(groups)+2)
 	if hasAuto {
 		tabs = append(tabs, "AUTO")
@@ -108,7 +107,7 @@ func GetDefaultView() string {
 	if appConfig.DefaultView != "" {
 		return appConfig.DefaultView
 	}
-	if len(appConfig.AutoRules) > 0 || len(appConfig.PinnedGroups) > 0 {
+	if len(appConfig.AutoRules) > 0 {
 		return "AUTO"
 	}
 	groups := GetAllGroups()

@@ -188,6 +188,25 @@ func GetEffectiveGroup(mode string) (groupName string, isAuto bool) {
 	return "", true
 }
 
+func GetMatchingAutoGroups() []string {
+	if len(appConfig.AutoRules) == 0 {
+		return nil
+	}
+	loc := time.FixedZone("CST", 8*3600)
+	now := time.Now().In(loc)
+	seen := make(map[string]bool)
+	var out []string
+	for _, r := range appConfig.AutoRules {
+		if matchRule(now, r) {
+			if !seen[r.Group] {
+				seen[r.Group] = true
+				out = append(out, r.Group)
+			}
+		}
+	}
+	return out
+}
+
 func startTouchListener(screenWidth, screenHeight int) {
 	var devPath string
 	for _, p := range []string{"/dev/input/event1", "/dev/input/event0", "/dev/input/event2"} {

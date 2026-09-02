@@ -53,31 +53,27 @@ func neededStocks() []StockConfig {
 	mode := GetViewMode()
 	eff, isAuto := GetEffectiveGroup(mode)
 	if eff == "" {
-		if !isAuto || len(appConfig.PinnedGroups) == 0 {
-			return nil
-		}
-		want := make(map[string]bool, len(appConfig.PinnedGroups))
-		for _, pg := range appConfig.PinnedGroups {
-			want[pg] = true
-		}
+		return nil
+	}
+	if eff == "ALL" {
+		return all
+	}
+	if !isAuto {
 		var out []StockConfig
 		for _, c := range all {
-			if want[c.Group] {
+			if c.Group == eff {
 				out = append(out, c)
 			}
 		}
 		return out
 	}
-	if eff == "ALL" {
-		return all
+	matching := GetMatchingAutoGroups()
+	if len(matching) == 0 {
+		return nil
 	}
-	want := map[string]bool{eff: true}
-	if isAuto {
-		for _, pg := range appConfig.PinnedGroups {
-			if pg != eff {
-				want[pg] = true
-			}
-		}
+	want := make(map[string]bool, len(matching))
+	for _, g := range matching {
+		want[g] = true
 	}
 	var out []StockConfig
 	for _, c := range all {

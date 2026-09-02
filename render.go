@@ -481,20 +481,13 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 	style := GetStyleMode()
 	for _, b := range curBlocks {
 		if b.isHeader {
-			if style == "large" && b.group == effectiveGroup && effectiveGroup != "ALL" {
-				fillRect(img, 30, startY, width-60, 44, 0)
-				gTitle := fmt.Sprintf("=== %s ===", b.group)
-				DrawText(img, 45, startY+10, gTitle, 24, color.White)
-			} else {
-				fillRect(img, 30, startY, width-60, 38, 0)
-				DrawText(img, 45, startY+8, "[ "+b.group+" ]", 22, color.White)
-			}
+			fillRect(img, 30, startY, width-60, 38, 0)
+			DrawText(img, 45, startY+8, "[ "+b.group+" ]", 22, color.White)
 			startY += b.h
 			continue
 		}
 		item := b.data
-		isSingle := b.group == effectiveGroup && effectiveGroup != "ALL"
-		if style == "large" && isSingle {
+		if style == "large" && effectiveGroup != "ALL" {
 			cardH := b.h - b.gap
 			drawRect(img, 30, startY, width-60, cardH, 0, 2)
 			nameStr := item.Name
@@ -616,19 +609,13 @@ func renderScreenSVG(data []StockData, width, height int) string {
 	startY := 142
 	for _, b := range curBlocks {
 		if b.isHeader {
-			if style == "large" && b.group == effectiveGroup && effectiveGroup != "ALL" {
-				sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="44" fill="black"/>`, startY, width-60))
-				sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="22" fill="white">=== %s ===</text>`, startY+27, b.group))
-			} else {
-				sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="38" fill="black"/>`, startY, width-60))
-				sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="22" fill="white">[ %s ]</text>`, startY+24, b.group))
-			}
+			sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="38" fill="black"/>`, startY, width-60))
+			sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="22" fill="white">[ %s ]</text>`, startY+24, b.group))
 			startY += b.h
 			continue
 		}
 		cardH := b.h - b.gap
-		isSingle := b.group == effectiveGroup && effectiveGroup != "ALL"
-		if style == "large" && isSingle {
+		if style == "large" && effectiveGroup != "ALL" {
 			// 大卡 SVG: 放大字体+大图
 			nameStr := b.data.Name
 			if nameStr == "" {
