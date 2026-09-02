@@ -275,7 +275,7 @@ func startTouchListener(screenWidth, screenHeight int) {
 		if velocity < 0.4 {
 			return false
 		}
-		// 垂直滑动 -> 翻页
+		// 仅保留垂直滑动翻页，水平手势已移除（易误触，Tab 改为点按切换）
 		if ady > 120 && ady > adx*2 {
 			var total int
 			cacheMutex.RLock()
@@ -289,14 +289,12 @@ func startTouchListener(screenWidth, screenHeight int) {
 				return false
 			}
 			if dy < 0 {
-				// 上滑 -> 下一页 (内容上移)
 				if NextPage(total) {
 					log.Printf("Swipe up: next page %d/%d", GetCurrentPage()+1, total)
 					triggerPageRefresh()
 					return true
 				}
 			} else {
-				// 下滑 -> 上一页
 				if PrevPage() {
 					log.Printf("Swipe down: prev page %d/%d", GetCurrentPage()+1, total)
 					triggerPageRefresh()
@@ -304,30 +302,6 @@ func startTouchListener(screenWidth, screenHeight int) {
 				}
 			}
 			return false
-		}
-		// 水平滑动 -> 切 Tab (动态, 非硬编码)
-		if adx > 120 && adx > ady*2 {
-			tabs := GetTabModes()
-			cur := GetViewMode()
-			idx := 0
-			for i, t := range tabs {
-				if t == cur {
-					idx = i
-					break
-				}
-			}
-			if dx < 0 {
-				// 左滑 -> 下一个 Tab
-				next := tabs[(idx+1)%len(tabs)]
-				log.Printf("Swipe left: tab %s -> %s", cur, next)
-				SetViewMode(next)
-				return true
-			}
-			// 右滑 -> 上一个 Tab
-			prev := tabs[(idx-1+len(tabs))%len(tabs)]
-			log.Printf("Swipe right: tab %s -> %s", cur, prev)
-			SetViewMode(prev)
-			return true
 		}
 		return false
 	}
