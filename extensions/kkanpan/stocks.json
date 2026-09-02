@@ -10,7 +10,7 @@
   {"code": "usAAPL", "name": "苹果", "group": "US", "source": "tencent"},
   {"code": "usNVDA", "name": "英伟达", "group": "US", "source": "tencent"},
   {"code": "usTSLA", "name": "特斯拉", "group": "US", "source": "tencent"},
-  {"code": "GC=F", "name": "黄金", "group": "futures", "source": "yahoo"},
-  {"code": "CL=F", "name": "原油", "group": "futures", "source": "yahoo"},
-  {"code": "^VIX", "name": "VIX", "group": "futures", "source": "yahoo"}
+  {"code": "GC=F", "name": "黄金", "group": "other", "source": "yahoo"},
+  {"code": "CL=F", "name": "原油", "group": "other", "source": "yahoo"},
+  {"code": "^VIX", "name": "VIX", "group": "other", "source": "yahoo"}
 ]

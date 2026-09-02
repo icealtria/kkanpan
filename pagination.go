@@ -48,12 +48,8 @@ func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 		if !isAuto || len(appConfig.PinnedGroups) == 0 {
 			return nil
 		}
-		h := 103
-		if style == "large" {
-			h = 93
-		}
 		for _, pg := range appConfig.PinnedGroups {
-			blocks = appendGroup(blocks, pg, groups[pg], h)
+			blocks = appendGroup(blocks, pg, groups[pg], 103)
 		}
 		return blocks
 	}
@@ -75,12 +71,11 @@ func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 			blocks = appendGroup(blocks, effectiveGroup, groups[effectiveGroup], 103)
 		}
 		if isAuto {
-			ph := 93
 			for _, pg := range appConfig.PinnedGroups {
 				if pg == effectiveGroup {
 					continue
 				}
-				blocks = appendGroup(blocks, pg, groups[pg], ph)
+				blocks = appendGroup(blocks, pg, groups[pg], 103)
 			}
 		}
 	} else if effectiveGroup == "ALL" {

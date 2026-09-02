@@ -478,17 +478,6 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 		curBlocks = pages[curPage]
 	}
 	startY := 142
-	isPinnedGroup := func(g string) bool {
-		if !isAuto || g == effectiveGroup {
-			return false
-		}
-		for _, pg := range appConfig.PinnedGroups {
-			if pg == g {
-				return true
-			}
-		}
-		return false
-	}
 	style := GetStyleMode()
 	for _, b := range curBlocks {
 		if b.isHeader {
@@ -505,7 +494,6 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 		}
 		item := b.data
 		isSingle := b.group == effectiveGroup && effectiveGroup != "ALL"
-		pinned := isPinnedGroup(b.group)
 		if style == "large" && isSingle {
 			cardH := b.h - b.gap
 			drawRect(img, 30, startY, width-60, cardH, 0, 2)
@@ -536,21 +524,6 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 			DrawText(img, width-45-priceW, startY+16, priceStr, 38, color.Black)
 			DrawText(img, width-45-chgW, startY+64, chgStr, 24, color.Black)
 			startY += b.h
-		} else if pinned {
-			cardH := b.h - b.gap
-			drawRect(img, 30, startY, width-60, cardH, 0, 2)
-			nameStr := item.Name
-			if nameStr == "" {
-				nameStr = item.Code
-			}
-			DrawText(img, 45, startY+14, nameStr, 26, color.Black)
-			DrawText(img, 45, startY+48, item.Code, 18, color.Gray{Y: 100})
-			priceStr, chgStr := stockStrings(item.Price, item.Change, item.Pct, false)
-			priceW := MeasureText(priceStr, 34)
-			chgW := MeasureText(chgStr, 20)
-			DrawText(img, width-45-priceW, startY+14, priceStr, 34, color.Black)
-			DrawText(img, width-45-chgW, startY+50, chgStr, 20, color.Black)
-			startY += b.h
 		} else {
 			cardH := b.h - b.gap
 			drawRect(img, 30, startY, width-60, cardH, 0, 2)
@@ -561,17 +534,13 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 			DrawText(img, 45, startY+14, nameStr, 26, color.Black)
 			DrawText(img, 45, startY+48, item.Code, 18, color.Gray{Y: 100})
 			priceStr, chgStr := stockStrings(item.Price, item.Change, item.Pct, false)
-			if !pinned && len(item.Prices) > 2 {
+			if len(item.Prices) > 2 {
 				drawSparklineGraph(img, item.Prices, 240, startY+12, 440, 70, item.Code)
 			}
 			priceW := MeasureText(priceStr, 34)
 			chgW := MeasureText(chgStr, 20)
-			chgY := startY + 50
-			if !pinned {
-				chgY = startY + 52
-			}
 			DrawText(img, width-45-priceW, startY+14, priceStr, 34, color.Black)
-			DrawText(img, width-45-chgW, chgY, chgStr, 20, color.Black)
+			DrawText(img, width-45-chgW, startY+52, chgStr, 20, color.Black)
 			startY += b.h
 		}
 	}
@@ -658,15 +627,6 @@ func renderScreenSVG(data []StockData, width, height int) string {
 			continue
 		}
 		cardH := b.h - b.gap
-		isPinned := false
-		if isAuto && b.group != effectiveGroup {
-			for _, pg := range appConfig.PinnedGroups {
-				if pg == b.group {
-					isPinned = true
-					break
-				}
-			}
-		}
 		isSingle := b.group == effectiveGroup && effectiveGroup != "ALL"
 		if style == "large" && isSingle {
 			// 大卡 SVG: 放大字体+大图
@@ -696,8 +656,7 @@ func renderScreenSVG(data []StockData, width, height int) string {
 			sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="28" font-weight="bold" text-anchor="end">%s</text>`, width-45, startY+32, priceStr))
 			sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="18" text-anchor="end">%s</text>`, width-45, startY+58, chgStr))
 		} else {
-			withSparkline := !isPinned
-			svgWriteCard(&sb, b.data, startY, width, cardH, withSparkline)
+			svgWriteCard(&sb, b.data, startY, width, cardH, true)
 		}
 		startY += b.h
 	}

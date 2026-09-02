@@ -2,7 +2,7 @@
   "proxy": "http://127.0.0.1:7890",
   "cacheTTL": 55,
   "defaultView": "AUTO",
-  "pinnedGroups": ["futures"],
+  "pinnedGroups": ["other"],
   "autoRules": [
     {"group": "a-share", "weekdays": [1, 2, 3, 4, 5], "start": "09:00", "end": "15:30"},
     {"group": "US", "weekdays": [1, 2, 3, 4, 5], "start": "16:00", "end": "23:59"},
