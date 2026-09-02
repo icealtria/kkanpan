@@ -44,22 +44,16 @@ func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 			}
 			blocks = append(blocks, block{isHeader: true, group: pg, h: 44, gap: 6})
 			for _, f := range futs {
-				blocks = append(blocks, block{isHeader: false, group: pg, data: f, h: 93, gap: 8})
+				blocks = append(blocks, block{isHeader: false, group: pg, data: f, h: 103, gap: 8})
 			}
 		}
 		return blocks
 	}
 	if effectiveGroup != "ALL" && len(groups[effectiveGroup]) > 0 {
 		list := groups[effectiveGroup]
-		blocks = append(blocks, block{isHeader: true, group: effectiveGroup, h: 52, gap: 8}) // 44+8
-		cardH := 145
-		if len(list) <= 3 {
-			cardH = 175
-		} else if len(list) > 6 {
-			cardH = 110
-		}
+		blocks = append(blocks, block{isHeader: true, group: effectiveGroup, h: 44, gap: 6})
 		for _, it := range list {
-			blocks = append(blocks, block{isHeader: false, group: effectiveGroup, data: it, h: cardH + 10, gap: 10})
+			blocks = append(blocks, block{isHeader: false, group: effectiveGroup, data: it, h: 103, gap: 8})
 		}
 		if isAuto {
 			for _, pg := range appConfig.PinnedGroups {

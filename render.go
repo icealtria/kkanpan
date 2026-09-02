@@ -433,53 +433,15 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 	}
 	for _, b := range curBlocks {
 		if b.isHeader {
-			if b.group == effectiveGroup && effectiveGroup != "ALL" {
-				// 单组大标题
-				fillRect(img, 30, startY, width-60, 44, 0)
-				gTitle := fmt.Sprintf("=== %s ===", b.group)
-				DrawText(img, 45, startY+10, gTitle, 24, color.White)
-			} else {
-				fillRect(img, 30, startY, width-60, 38, 0)
-				DrawText(img, 45, startY+8, "[ "+b.group+" ]", 22, color.White)
-			}
+			fillRect(img, 30, startY, width-60, 38, 0)
+			DrawText(img, 45, startY+8, "[ "+b.group+" ]", 22, color.White)
 			startY += b.h
 			continue
 		}
-		// 卡片
+		// 卡片: 统一为 ALL 同款紧凑尺寸 (95+8)
 		item := b.data
-		isSingle := b.group == effectiveGroup && effectiveGroup != "ALL"
 		pinned := isPinnedGroup(b.group)
-		if isSingle {
-			cardH := b.h - b.gap
-			drawRect(img, 30, startY, width-60, cardH, 0, 2)
-			nameStr := item.Name
-			if nameStr == "" {
-				nameStr = item.Code
-			}
-			DrawText(img, 45, startY+18, nameStr, 32, color.Black)
-			DrawText(img, 45, startY+62, item.Code, 20, color.Gray{Y: 100})
-			arrow := " "
-			if item.Change > 0 {
-				arrow = "▲"
-			} else if item.Change < 0 {
-				arrow = "▼"
-			}
-			priceStr := "--"
-			if item.Price > 0 {
-				priceStr = fmt.Sprintf("%.2f", item.Price)
-			}
-			chgStr := fmt.Sprintf("%s %+.2f (%+.2f%%)", arrow, item.Change, item.Pct)
-			chartW := width - 490
-			chartH := cardH - 30
-			if len(item.Prices) > 2 {
-				drawSparklineGraph(img, item.Prices, 210, startY+15, chartW, chartH, item.Code)
-			}
-			priceW := MeasureText(priceStr, 38)
-			chgW := MeasureText(chgStr, 24)
-			DrawText(img, width-45-priceW, startY+16, priceStr, 38, color.Black)
-			DrawText(img, width-45-chgW, startY+64, chgStr, 24, color.Black)
-			startY += b.h
-		} else if pinned {
+		if pinned {
 			cardH := b.h - b.gap
 			drawRect(img, 30, startY, width-60, cardH, 0, 2)
 			nameStr := item.Name
