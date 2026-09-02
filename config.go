@@ -33,12 +33,11 @@ type AutoRule struct {
 }
 
 type AppConfig struct {
-	Proxy          string         `json:"proxy"`          // "http://127.0.0.1:7890" 可空
-	CacheTTL       int64          `json:"cacheTTL"`       // 秒
-	PinnedGroups   []string       `json:"pinnedGroups"`   // AUTO 时常驻的组
-	AutoRules      []AutoRule     `json:"autoRules"`      // 按顺序匹配，09:00-15:30 格式
-	TradingMinutes map[string]int `json:"tradingMinutes"` // code/分组 -> 分钟数
-	DefaultView    string         `json:"defaultView"`    // 默认显示组, 留空则 AUTO 或首个分组
+	Proxy        string     `json:"proxy"`        // "http://127.0.0.1:7890" 可空
+	CacheTTL     int64      `json:"cacheTTL"`     // 秒
+	PinnedGroups []string   `json:"pinnedGroups"` // AUTO 时常驻的组
+	AutoRules    []AutoRule `json:"autoRules"`    // 按顺序匹配，09:00-15:30 格式
+	DefaultView  string     `json:"defaultView"`  // 默认显示组, 留空则 AUTO 或首个分组
 }
 
 var appConfig AppConfig
@@ -52,9 +51,6 @@ func loadAppConfig() AppConfig {
 			if err := json.Unmarshal(data, &cfg); err == nil {
 				if cfg.CacheTTL == 0 {
 					cfg.CacheTTL = 55
-				}
-				if cfg.TradingMinutes == nil {
-					cfg.TradingMinutes = map[string]int{}
 				}
 				log.Printf("Loaded app config from %s (proxy=%q)", p, cfg.Proxy)
 				return cfg
@@ -85,17 +81,9 @@ func loadStocks() []StockConfig {
 }
 
 func tradingMinutes(code string) int {
-	if v, ok := appConfig.TradingMinutes[code]; ok {
-		return v
-	}
-	for _, s := range loadStocks() {
-		if s.Code == code {
-			if v, ok := appConfig.TradingMinutes[s.Group]; ok {
-				return v
-			}
-			break
-		}
-	}
+	// 已废弃 tradingMinutes 配置, 直接由 API 数据长度推断
+	// sparkline 用 len(prices) 自适应宽度, 无需预设总数
+	_ = code
 	return 0
 }
 

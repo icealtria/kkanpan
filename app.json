@@ -7,11 +7,5 @@
     {"group": "a-share", "weekdays": [1, 2, 3, 4, 5], "start": "09:00", "end": "15:30"},
     {"group": "US", "weekdays": [1, 2, 3, 4, 5], "start": "16:00", "end": "23:59"},
     {"group": "US", "weekdays": [2, 3, 4, 5, 6], "start": "00:00", "end": "08:00"}
-  ],
-  "tradingMinutes": {
-    "a-share": 240,
-    "US": 390,
-    "futures": 1440,
-    "sh000001": 240
-  }
+  ]
 }
