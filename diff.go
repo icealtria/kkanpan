@@ -179,8 +179,8 @@ func (sd *ScreenDiffer) UpdateScreen(newImg *image.Gray, fullRefresh bool) error
 
 	log.Printf("[diff] %d dirty regions, %.1f%% of screen changed", len(dirtyRects), ratio*100)
 
-	// >60% 或 >12 rects 时全屏更快（局部 eips 次数过多反而更慢）
-	if ratio > 0.60 || len(dirtyRects) > 12 {
+	// >60% 或 >5 rects 时全屏更快: 每次 eips 都是 fork+系统调用, 5次局部开销 > 1次全刷
+	if ratio > 0.60 || len(dirtyRects) > 5 {
 		log.Printf("[diff] Too many changes (%.0f%%, %d rects), falling back to full update", ratio*100, len(dirtyRects))
 		err := writeAndEips(newImg, eipsPath, hasEips, false)
 		sd.prevFrame = cloneGrayImage(newImg)
@@ -205,11 +205,12 @@ func (sd *ScreenDiffer) UpdateScreen(newImg *image.Gray, fullRefresh bool) error
 
 func writeAndEips(img *image.Gray, eipsPath string, hasEips, full bool) error {
 	tmpPath := "/tmp/kkanpan.png"
+	// NoCompression: eips 只要能读 PNG 即可, tmpfs 内存盘 IO 毫秒级, 省下 PNG 压缩的 CPU 计算
 	f, err := os.Create(tmpPath)
 	if err != nil {
 		return err
 	}
-	enc := &png.Encoder{CompressionLevel: png.BestSpeed}
+	enc := &png.Encoder{CompressionLevel: png.NoCompression}
 	if err := enc.Encode(f, img); err != nil {
 		f.Close()
 		return err
@@ -251,7 +252,7 @@ func eipsPartialUpdate(img *image.Gray, eipsPath string, r DirtyRect, idx int) e
 	if err != nil {
 		return err
 	}
-	enc := &png.Encoder{CompressionLevel: png.BestSpeed}
+	enc := &png.Encoder{CompressionLevel: png.NoCompression}
 	if err := enc.Encode(f, cropped); err != nil {
 		f.Close()
 		return err

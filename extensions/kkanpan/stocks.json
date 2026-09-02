@@ -5,6 +5,7 @@
   {"code": "sz002124", "name": "天邦食品", "group": "a-share", "source": "tencent"},
   {"code": "sh605296", "name": "神农集团", "group": "a-share", "source": "tencent"},
   {"code": "sz002624", "name": "完美世界", "group": "a-share", "source": "tencent"},
+  {"code": "sz002624", "name": "完美世界", "group": "a-share", "source": "tencent"},
   {"code": "usINX", "name": "标普500", "group": "US", "source": "tencent"},
   {"code": "usQQQ", "name": "纳指100", "group": "US", "source": "tencent"},
   {"code": "usNVDA", "name": "英伟达", "group": "US", "source": "tencent"},

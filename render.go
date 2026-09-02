@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"image/draw"
 	"math"
 	"strconv"
 	"strings"
 )
+
+var globalCanvas *image.Gray // 复用渲染画布, 避免每次 NewGray 分配 ~1.5MB
 
 func sparklinePoints(prices []float64, code string, w, h int) (pts []string, minVal, maxVal, rng float64) {
 	if len(prices) < 2 {
@@ -499,8 +500,15 @@ func drawSparklineGraph(img *image.Gray, item StockData, x, y, w, h int) {
 }
 
 func renderScreenImage(data []StockData, width, height int) *image.Gray {
-	img := image.NewGray(image.Rect(0, 0, width, height))
-	draw.Draw(img, img.Bounds(), &image.Uniform{color.Gray{Y: 255}}, image.Point{}, draw.Src)
+	// 复用全局画布, 避免每次渲染分配 ~1.5MB 并触发 GC
+	if globalCanvas == nil || globalCanvas.Rect.Dx() != width || globalCanvas.Rect.Dy() != height {
+		globalCanvas = image.NewGray(image.Rect(0, 0, width, height))
+	}
+	img := globalCanvas
+	// memset 白色 (Y=255), 比 draw.Draw + Uniform 快
+	for i := range img.Pix {
+		img.Pix[i] = 255
+	}
 
 	viewMode := GetViewMode()
 	effectiveGroup, isAuto := GetEffectiveGroup(viewMode)

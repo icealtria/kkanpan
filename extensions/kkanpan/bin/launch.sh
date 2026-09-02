@@ -9,7 +9,9 @@ killall -9 kkanpan 2>/dev/null
 sleep 1
 
 echo "[kkanpan] Starting in COEXIST mode (pillow+awesome, framework kept)..."
-"${BIN}" -interval 60 > "${LOG}" 2>&1
+# GOGC=300: 内存增长300%才触发GC, 用内存换CPU (省电)
+# GOMEMLIMIT: 限制最大内存防OOM
+env GOGC=300 GOMEMLIMIT=100MiB "${BIN}" -interval 60 > "${LOG}" 2>&1
 
 # Go 内已 defer EnableCoexistMode, 兜底再恢复一次 (防 crash)
 killall -CONT awesome 2>/dev/null || true

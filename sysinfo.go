@@ -46,17 +46,13 @@ func readKindleSystemInfo() KindleSystemInfo {
 		Time: time.Now().Format("15:04"),
 	}
 
-	info.BatteryLevel = lipcGet("com.lab126.powerd", "battLevel")
-	if info.BatteryLevel == "" {
-		info.BatteryLevel = "--"
-	}
+	// 直接读取 /sys 节点, 零 fork 开销 (避免 lipc-get-prop 每次 fork 进程)
+	info.BatteryLevel = readBatteryFromSys()
+	info.IsCharging = readChargingFromSys()
 
-	charging := lipcGet("com.lab126.powerd", "isCharging")
-	info.IsCharging = (charging == "1")
-
+	// WiFi 信号强度无 /sys 节点, 保留 lipc (仅在非交易时间偶尔读取)
 	signal := lipcGet("com.lab126.wifid", "signalStrength")
 	if signal == "" {
-		// 尝试读取连接状态判断 WiFi 是否开启
 		cmState := lipcGet("com.lab126.wifid", "cmState")
 		if cmState == "" || cmState == "DOWN" || cmState == "NA" {
 			info.WiFiSignal = "OFF"
@@ -68,6 +64,35 @@ func readKindleSystemInfo() KindleSystemInfo {
 	}
 
 	return info
+}
+
+func readBatteryFromSys() string {
+	paths := []string{
+		"/sys/class/power_supply/max77696-battery/capacity",
+		"/sys/class/power_supply/battery/capacity",
+		"/sys/class/power_supply/mc13892_bat/capacity",
+	}
+	for _, p := range paths {
+		if b, err := os.ReadFile(p); err == nil {
+			return strings.TrimSpace(string(b))
+		}
+	}
+	return "--"
+}
+
+func readChargingFromSys() bool {
+	paths := []string{
+		"/sys/class/power_supply/max77696-battery/status",
+		"/sys/class/power_supply/battery/status",
+		"/sys/class/power_supply/mc13892_bat/status",
+	}
+	for _, p := range paths {
+		if b, err := os.ReadFile(p); err == nil {
+			s := strings.TrimSpace(string(b))
+			return s == "Charging" || s == "Full"
+		}
+	}
+	return false
 }
 
 func lipcGet(service, prop string) string {
