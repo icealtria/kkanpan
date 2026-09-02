@@ -573,11 +573,12 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 		}
 	}
 
-	// 底部状态栏: 显示系统信息 (时间/WiFi/电量) + 触控提示
+	// 底部状态栏: 左侧提示 + 右侧时间电量同一行
 	statusStr := FormatStatusBar()
 	drawLine(img, 30, height-58, width-30, height-58, 0, 1)
-	DrawText(img, 30, height-50, statusStr, 22, color.Black)
 	DrawText(img, 30, height-24, "点击右上角 [X] 退出 | 点击顶部 Tab 切换视图", 18, color.Gray{Y: 120})
+	statusW := MeasureText(statusStr, 18)
+	DrawText(img, width-30-statusW, height-24, statusStr, 18, color.Black)
 	return img
 }
 
@@ -794,8 +795,9 @@ func renderScreenSVG(data []StockData, width, height int) string {
 
 	statusStr := FormatStatusBar()
 	sb.WriteString(fmt.Sprintf(`<line x1="30" y1="%d" x2="%d" y2="%d" stroke="black" stroke-width="1"/>`, height-58, width-30, height-58))
-	sb.WriteString(fmt.Sprintf(`<text x="30" y="%d" font-family="monospace" font-size="18" font-weight="bold">%s</text>`, height-38, statusStr))
 	sb.WriteString(fmt.Sprintf(`<text x="30" y="%d" font-family="monospace" font-size="14" fill="#888">TAP [X] TO EXIT | TAP TABS TO SWITCH</text>`, height-16))
+	// 右下角时间电量与提示同一行
+	sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="14" font-weight="bold" text-anchor="end">%s</text>`, width-30, height-16, statusStr))
 	sb.WriteString(`</svg>`)
 	return sb.String()
 }

@@ -147,16 +147,14 @@ func parseSignalInt(s string) (int, bool) {
 	return v, true
 }
 
-// FormatStatusBar 格式化底部状态栏文本
+// FormatStatusBar 格式化底部右下角时间电量 (WiFi 已移除)
 func FormatStatusBar() string {
 	info := GetKindleSystemInfo()
-
 	battStr := info.BatteryLevel + "%"
 	if info.IsCharging {
 		battStr = info.BatteryLevel + "% CHG"
 	}
-
-	return info.Time + " | WIFI " + info.WiFiSignal + " | BATT " + battStr
+	return info.Time + " | BATT " + battStr
 }
 
 // ============================================================
