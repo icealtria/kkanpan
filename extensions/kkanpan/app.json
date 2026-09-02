@@ -1,0 +1,17 @@
+{
+  "proxy": "http://192.168.0.100:7890",
+  "cacheTTL": 55,
+  "pinnedGroups": ["期货"],
+  "autoRules": [
+    {"group": "A股", "weekdays": [1, 2, 3, 4, 5], "start": "09:00", "end": "15:30"},
+    {"group": "美股", "weekdays": [1, 2, 3, 4, 5], "start": "16:00", "end": "08:00"},
+    {"group": "美股", "weekdays": [6], "start": "00:00", "end": "06:00"},
+    {"group": "全部", "weekdays": [], "start": "00:00", "end": "23:59"}
+  ],
+  "tradingMinutes": {
+    "A股": 240,
+    "美股": 390,
+    "期货": 1440,
+    "sh000001": 240
+  }
+}

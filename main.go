@@ -62,7 +62,9 @@ func main() {
 				}
 			case <-triggerRefreshCh:
 				// 用户触控切换 Tab 或点击刷新，立即响应重绘
+				// 切 Tab 后布局完全不同，清除 diff 缓存做全屏刷新
 				log.Println("Instant refresh triggered by user interaction...")
+				screenDiffer.ClearDiffCache()
 				d := getData()
 				img := renderScreenImage(d, *width, *height)
 				_ = updateKindleScreen(img, false)

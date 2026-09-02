@@ -8,46 +8,12 @@ import (
 	"image/png"
 	"log"
 	"net/http"
-	"os"
-	"os/exec"
 	"strings"
 	"time"
 )
 
 func updateKindleScreen(img *image.Gray, fullRefresh bool) error {
-	tmpPath := "/tmp/kkanpan.png"
-	f, err := os.Create(tmpPath)
-	if err != nil {
-		return err
-	}
-	if err := png.Encode(f, img); err != nil {
-		f.Close()
-		return err
-	}
-	f.Close()
-
-	eipsPath := "/usr/sbin/eips"
-	if _, err := os.Stat(eipsPath); err == nil {
-		if fullRefresh {
-			_ = exec.Command(eipsPath, "-c").Run()
-			time.Sleep(200 * time.Millisecond)
-			// -f 触发全刷波形，-g 加载图片
-			cmd := exec.Command(eipsPath, "-f", "-g", tmpPath)
-			if out, err := cmd.CombinedOutput(); err != nil {
-				log.Printf("eips -f -g err: %v, output: %s, retrying -g", err, string(out))
-				_ = exec.Command(eipsPath, "-g", tmpPath).Run()
-			}
-		} else {
-			cmd := exec.Command(eipsPath, "-g", tmpPath)
-			if out, err := cmd.CombinedOutput(); err != nil {
-				log.Printf("eips -g err: %v, output: %s", err, string(out))
-			}
-		}
-		log.Println("Kindle eips refreshed successfully")
-	} else {
-		log.Printf("Screen image rendered to %s (not on Kindle device)", tmpPath)
-	}
-	return nil
+	return screenDiffer.UpdateScreen(img, fullRefresh)
 }
 
 func startHTTPServer(host string, port int) {
