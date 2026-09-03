@@ -97,6 +97,14 @@ func tradingMinutes(code string) int {
 	return 0
 }
 
+// chartTotal: 实际点数超过横轴时以实际为准 (A股个股盘后交易等)
+func chartTotal(code string, n int) int {
+	if t := tradingMinutes(code); t >= n {
+		return t
+	}
+	return n
+}
+
 func GetAllGroups() []string {
 	seen := make(map[string]bool)
 	var out []string

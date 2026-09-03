@@ -135,10 +135,7 @@ func svgWriteCard(sb *strings.Builder, item StockData, startY, width, cardH int,
 		if isYahoo {
 			totalSec = float64(item.RegularEnd - item.RegularStart)
 		}
-		total := tradingMinutes(item.Code)
-		if total == 0 {
-			total = len(prices)
-		}
+		total := chartTotal(item.Code, len(prices))
 		pts := make([]string, 0, len(prices))
 		for i, p := range prices {
 			var x float64
@@ -486,10 +483,7 @@ func drawSparklineGraph(img *image.Gray, item StockData, x, y, w, h int) {
 			x0 = x + 2 + int(float64(item.Timestamps[i]-item.RegularStart)*float64(w-4)/totalSec)
 			x1 = x + 2 + int(float64(item.Timestamps[i+1]-item.RegularStart)*float64(w-4)/totalSec)
 		} else {
-			total := tradingMinutes(item.Code)
-			if total == 0 {
-				total = len(prices)
-			}
+			total := chartTotal(item.Code, len(prices))
 			x0 = x + 2 + int(float64(i)*float64(w-4)/float64(total))
 			x1 = x + 2 + int(float64(i+1)*float64(w-4)/float64(total))
 		}
@@ -760,10 +754,7 @@ func renderScreenSVG(data []StockData, width, height int) string {
 				if isYahoo {
 					totalSec = float64(b.data.RegularEnd - b.data.RegularStart)
 				}
-				total := tradingMinutes(b.data.Code)
-				if total == 0 {
-					total = len(prices)
-				}
+				total := chartTotal(b.data.Code, len(prices))
 				pts := make([]string, 0, len(prices))
 				for i, p := range prices {
 					var x float64
