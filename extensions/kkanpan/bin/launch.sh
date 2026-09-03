@@ -4,7 +4,7 @@ EXT_DIR="/mnt/us/extensions/kkanpan"
 BIN="${EXT_DIR}/bin/kkanpan"
 LOG="/tmp/kkanpan.log"
 
-chmod +x "${BIN}" "${EXT_DIR}/bin/stop.sh" 2>/dev/null
+chmod +x "${BIN}" 2>/dev/null
 killall -9 kkanpan 2>/dev/null
 sleep 1
 
