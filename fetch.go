@@ -393,14 +393,10 @@ func refreshData() []StockData {
 			histMutex.Unlock()
 		}
 
-		svg := ""
-		if len(prices) > 2 {
-			svg = svgSparkline(prices, 300, 60, code)
-		}
 		items = append(items, StockData{
 			Code: code, Name: c.Name, Group: c.Group,
 			Price: price, Change: change, Pct: pct, Prev: prev,
-			Prices: prices, SVG: svg,
+			Prices: prices,
 			Timestamps: cRes.timestamps, RegularStart: cRes.regStart, RegularEnd: cRes.regEnd, ChartPrevClose: cRes.chartPrev,
 		})
 	}

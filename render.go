@@ -43,18 +43,6 @@ func sparklinePoints(prices []float64, code string, w, h int) (pts []string, min
 	return pts, minVal, maxVal, rng
 }
 
-func svgSparkline(prices []float64, w, h int, code string) string {
-	if len(prices) < 2 {
-		return ""
-	}
-	pts, _, _, _ := sparklinePoints(prices, code, w, h)
-	poly := strings.Join(pts, " ")
-	return fmt.Sprintf(`<svg width="%d" height="%d" viewBox="0 0 %d %d" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
-  <rect width="%d" height="%d" fill="white" stroke="black" stroke-width="1"/>
-  <polyline fill="none" stroke="black" stroke-width="1.5" points="%s"/>
-</svg>`, w, h, w, h, w, h, poly)
-}
-
 func stockStrings(price, change, pct float64, isSVG bool) (priceStr, chgStr string) {
 	if price > 0 {
 		priceStr = fmt.Sprintf("%.2f", price)
