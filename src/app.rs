@@ -264,7 +264,7 @@ impl App {
         use std::os::fd::AsRawFd;
         if let Some(f) = self.touch_file.lock().unwrap().as_ref() {
             unsafe {
-                libc::ioctl(f.as_raw_fd(), 0x40044590u64 as libc::c_ulong, on as i32);
+                libc::ioctl(f.as_raw_fd(), 0x40044590 as _, on as i32);
             }
         }
         self.touch_on.store(on, std::sync::atomic::Ordering::SeqCst);

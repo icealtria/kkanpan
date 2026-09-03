@@ -80,7 +80,7 @@ fn parse_args() -> Args {
     a
 }
 
-const EVIOCGRAB: u64 = 0x40044590;
+const EVIOCGRAB: u32 = 0x40044590;
 
 fn find_input(cands: &[&str]) -> Option<String> {
     cands.iter().find(|p| std::path::Path::new(p).exists()).map(|s| s.to_string())
@@ -98,7 +98,7 @@ fn touch_thread(app: Arc<App>) {
         return;
     };
     use std::os::fd::AsRawFd;
-    let r = unsafe { libc::ioctl(file.as_raw_fd(), EVIOCGRAB as libc::c_ulong, 1) };
+    let r = unsafe { libc::ioctl(file.as_raw_fd(), EVIOCGRAB as _, 1) };
     if r != 0 {
         eprintln!("[touch] EVIOCGRAB grab failed (non-fatal)");
     }

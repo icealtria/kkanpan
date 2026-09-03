@@ -8,13 +8,13 @@
 # 用法: ./build-rs.sh
 set -e
 TARGET=armv7-unknown-linux-musleabihf
+ZIGBUILD="$(command -v cargo-zigbuild 2>/dev/null || echo "$HOME/.cargo/bin/cargo-zigbuild")"
 
-if command -v cargo-zigbuild >/dev/null 2>&1; then
-  cargo zigbuild --release --target "$TARGET"
-else
+if [ ! -x "$ZIGBUILD" ]; then
   echo "==> 需要 cargo-zigbuild (cargo install cargo-zigbuild, 需 zig)" >&2
   exit 1
 fi
+"$ZIGBUILD" zigbuild --release --target "$TARGET"
 
 OUT="$(cargo metadata --no-deps --format-version 1 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')/$TARGET/release/kkanpan"
 
