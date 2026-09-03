@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -34,6 +35,7 @@ const (
 	ABS_MT_POSITION_Y  = 0x36
 	ABS_MT_TRACKING_ID = 0x39
 	BTN_TOUCH          = 0x14a
+	KEY_POWER          = 116
 
 	// Linux ioctl: _IOW('E', 0x90, int) -> 独占触屏设备，拦截背景系统的一切点击
 	EVIOCGRAB = 0x40044590
@@ -44,6 +46,7 @@ var (
 	viewModeMu       sync.RWMutex
 	triggerRefreshCh = make(chan bool, 1)
 	grabbedDevFile   *os.File
+	touchEnabled     atomic.Bool // 电源键切换触控开关
 
 	currentStyle = "normal" // normal | large
 	styleMu      sync.RWMutex
@@ -127,6 +130,7 @@ func quitApp() {
 		_, _, _ = syscall.Syscall(syscall.SYS_IOCTL, grabbedDevFile.Fd(), uintptr(EVIOCGRAB), 0)
 		grabbedDevFile.Close()
 	}
+	RestoreFrontlight()
 	EnableCoexistMode()
 	// 唤醒 Kindle 原生主页并清屏重绘
 	_ = exec.Command("lipc-set-prop", "com.lab126.appmgrd", "show", "app://com.lab126.booklet.home").Run()
@@ -136,6 +140,68 @@ func quitApp() {
 	}
 	time.Sleep(300 * time.Millisecond)
 	os.Exit(0)
+}
+
+// toggleTouch 电源键切换触控: 按一次关闭, 再按一次开启
+func toggleTouch() {
+	if touchEnabled.Load() {
+		// 关闭触控: 释放 EVIOCGRAB
+		if grabbedDevFile != nil {
+			_, _, _ = syscall.Syscall(syscall.SYS_IOCTL, grabbedDevFile.Fd(), uintptr(EVIOCGRAB), 0)
+		}
+		touchEnabled.Store(false)
+		log.Println("[Touch] Touch DISABLED (power button)")
+	} else {
+		// 开启触控: 重新 grab
+		if grabbedDevFile != nil {
+			_, _, _ = syscall.Syscall(syscall.SYS_IOCTL, grabbedDevFile.Fd(), uintptr(EVIOCGRAB), 1)
+		}
+		touchEnabled.Store(true)
+		log.Println("[Touch] Touch ENABLED (power button)")
+	}
+}
+
+// startPowerButtonListener 监听电源键, 触发触控切换
+func startPowerButtonListener() {
+	var devPath string
+	for _, p := range []string{"/dev/input/event0", "/dev/input/event1", "/dev/input/event2"} {
+		if _, err := os.Stat(p); err == nil {
+			devPath = p
+			break
+		}
+	}
+	if devPath == "" {
+		log.Println("[Power] No input device found, power button disabled.")
+		return
+	}
+
+	file, err := os.Open(devPath)
+	if err != nil {
+		log.Printf("[Power] Cannot open %s for power button: %v", devPath, err)
+		return
+	}
+	defer file.Close()
+
+	log.Printf("[Power] Power button listener active on %s", devPath)
+
+	buf := make([]byte, 16)
+	for {
+		_, err := io.ReadFull(file, buf)
+		if err != nil {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		var ev32 inputEvent32
+		if err := binary.Read(bytes.NewReader(buf), binary.LittleEndian, &ev32); err != nil {
+			continue
+		}
+
+		// KEY_POWER 按下 (value=1) 时切换触控
+		if ev32.Type == EV_KEY && ev32.Code == KEY_POWER && ev32.Value == 1 {
+			toggleTouch()
+		}
+	}
 }
 
 func parseHM(s string) int {
@@ -238,6 +304,7 @@ func startTouchListener(screenWidth, screenHeight int) {
 	} else {
 		log.Println("Successfully acquired EXCLUSIVE grab on touchscreen! Background input completely blocked.")
 	}
+	touchEnabled.Store(true)
 
 	log.Printf("Touch listener active on %s (Resolution: %dx%d)", devPath, screenWidth, screenHeight)
 
@@ -390,6 +457,11 @@ func startTouchListener(screenWidth, screenHeight int) {
 			evType = ev32.Type
 			evCode = ev32.Code
 			evVal = ev32.Value
+		}
+
+		// 电源键关闭触控时, 仍读取事件 (防内核缓冲区满), 但跳过处理
+		if !touchEnabled.Load() {
+			continue
 		}
 
 		if evType == EV_ABS {

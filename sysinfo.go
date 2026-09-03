@@ -95,6 +95,34 @@ func readChargingFromSys() bool {
 	return false
 }
 
+// SaveAndTurnOffFrontlight 保存当前亮度并关闭背光 (省电)
+func SaveAndTurnOffFrontlight() {
+	b, err := os.ReadFile(frontlightSysfsPath)
+	if err != nil {
+		log.Printf("[Power] Cannot read frontlight: %v", err)
+		return
+	}
+	savedFrontlightBrightness = strings.TrimSpace(string(b))
+	if err := os.WriteFile(frontlightSysfsPath, []byte("0"), 0644); err != nil {
+		log.Printf("[Power] Cannot turn off frontlight: %v", err)
+		return
+	}
+	log.Printf("[Power] Frontlight saved=%s, turned off", savedFrontlightBrightness)
+}
+
+// RestoreFrontlight 恢复退出前的背光亮度
+func RestoreFrontlight() {
+	if savedFrontlightBrightness == "" {
+		return
+	}
+	if err := os.WriteFile(frontlightSysfsPath, []byte(savedFrontlightBrightness), 0644); err != nil {
+		log.Printf("[Power] Cannot restore frontlight: %v", err)
+		return
+	}
+	log.Printf("[Power] Frontlight restored to %s", savedFrontlightBrightness)
+	savedFrontlightBrightness = ""
+}
+
 func lipcGet(service, prop string) string {
 	out, err := exec.Command("lipc-get-prop", service, prop).Output()
 	if err != nil {
@@ -166,6 +194,9 @@ var (
 	kindleTitlebarGeom       string
 	kindleInitType           string // "upstart" | "sysv"
 	kindleFWVersion          string
+
+	savedFrontlightBrightness string
+	frontlightSysfsPath       = "/sys/class/backlight/max77696-bl/brightness"
 )
 
 func init() {

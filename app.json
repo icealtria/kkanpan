@@ -1,6 +1,7 @@
 {
   "proxy": "http://127.0.0.1:7890",
   "cacheTTL": 55,
+  "dimFrontlight": true,
   "defaultView": "AUTO",
   "autoRules": [
     {"group": "a-share", "weekdays": [1, 2, 3, 4, 5], "start": "09:00", "end": "15:30"},

@@ -45,7 +45,11 @@ func main() {
 
 	// 共存模式: 不杀 framework, 通过 pillow+awesome+wmctrl+statusbar 屏蔽状态栏 (KOReader 同款, 退出不重启)
 	DisableCoexistMode()
+	if appConfig.DimFrontlight {
+		SaveAndTurnOffFrontlight()
+	}
 	defer EnableCoexistMode()
+	defer RestoreFrontlight()
 
 	data := refreshData()
 	log.Printf("Fetched %d stocks successfully", len(data))
@@ -62,6 +66,7 @@ func main() {
 	}
 
 	go startTouchListener(*width, *height)
+	go startPowerButtonListener()
 
 	if *eips {
 		refreshCount := 0

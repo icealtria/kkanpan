@@ -38,10 +38,11 @@ type AutoRule struct {
 }
 
 type AppConfig struct {
-	Proxy       string     `json:"proxy"`     // "http://127.0.0.1:7890" 可空
-	CacheTTL    int64      `json:"cacheTTL"`  // 秒
-	AutoRules   []AutoRule `json:"autoRules"` // 按顺序匹配，09:00-15:30 格式
-	DefaultView string     `json:"defaultView"` // 默认显示组, 留空则 AUTO 或首个分组
+	Proxy         string     `json:"proxy"`         // "http://127.0.0.1:7890" 可空
+	CacheTTL      int64      `json:"cacheTTL"`      // 秒
+	AutoRules     []AutoRule `json:"autoRules"`     // 按顺序匹配，09:00-15:30 格式
+	DefaultView   string     `json:"defaultView"`   // 默认显示组, 留空则 AUTO 或首个分组
+	DimFrontlight bool       `json:"dimFrontlight"` // 启动时关闭背光省电 (默认 false)
 }
 
 var appConfig AppConfig
