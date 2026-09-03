@@ -52,6 +52,10 @@ var (
 	styleMu      sync.RWMutex
 )
 
+func init() {
+	touchEnabled.Store(true)
+}
+
 func GetViewMode() string {
 	viewModeMu.RLock()
 	defer viewModeMu.RUnlock()
@@ -159,6 +163,7 @@ func toggleTouch() {
 		touchEnabled.Store(true)
 		log.Println("[Touch] Touch ENABLED (power button)")
 	}
+	triggerPageRefresh()
 }
 
 // startPowerButtonListener 监听电源键, 触发触控切换

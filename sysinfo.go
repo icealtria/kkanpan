@@ -176,7 +176,11 @@ func FormatStatusBar() string {
 	if info.IsCharging {
 		battStr = info.BatteryLevel + "% CHG"
 	}
-	return info.Time + " | BATT " + battStr
+	s := info.Time + " | BATT " + battStr
+	if !touchEnabled.Load() {
+		s += " | TOUCH OFF"
+	}
+	return s
 }
 
 // ============================================================
