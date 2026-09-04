@@ -85,8 +85,7 @@ func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 	return blocks
 }
 
-func paginate(data []StockData, width, height int) [][]block {
-	_ = width
+func paginate(data []StockData, height int) [][]block {
 	eff, isAuto := GetEffectiveGroup(GetViewMode())
 	blocks := buildBlocks(data, eff, isAuto)
 	ph := max(height-contentTop-bottomReserve, 200)
@@ -111,8 +110,8 @@ func paginate(data []StockData, width, height int) [][]block {
 	return pages
 }
 
-func GetTotalPages(data []StockData, width, height int) int {
-	return len(paginate(data, width, height))
+func GetTotalPages(data []StockData, height int) int {
+	return len(paginate(data, height))
 }
 
 func GetCurrentPage() int {

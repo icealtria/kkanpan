@@ -46,7 +46,7 @@ func BenchmarkSparklinePoints(b *testing.B) {
 		prices[i] = 1800.0 + float64(i)*0.5
 	}
 	for i := 0; i < b.N; i++ {
-		sparklinePoints(prices, "sh600519", 480, 70)
+		sparklinePoints(prices, 480, 70)
 	}
 }
 

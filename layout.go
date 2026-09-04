@@ -4,6 +4,7 @@ const (
 	marginX       = 30
 	contentTop    = 142
 	bottomReserve = 70
+	dividerY      = 128
 
 	headerH     = 48
 	headerBarH  = 38
@@ -12,20 +13,34 @@ const (
 	largeCardH  = 155
 	cardBorder  = 1
 
+	titleX    = 30
+	titleY    = 16
+	titleSize = 32
+
+	modeTagX    = -460
+	modeTagY    = 20
+	modeTagSize = 24
+
 	tabBarY  = 68
 	tabBarH  = 50
 	tabGap   = 10
 	tabTextY = 12
+	tabTextSz = 24
 
 	styleBtnX = -185
+	styleBtnY = 10
 	styleBtnW = 80
 	styleBtnH = 46
-	styleBtnY = 10
 
 	exitBtnX = -95
+	exitBtnY = 10
 	exitBtnW = 65
 	exitBtnH = 46
-	exitBtnY = 10
+
+	pageIndicatorY = -40
+	statusLineY    = -58
+	statusTextY    = -24
+	statusTextSz   = 18
 
 	normalNameY  = 14
 	normalNameSz = 26

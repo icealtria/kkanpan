@@ -358,7 +358,7 @@ func startTouchListener(screenWidth, screenHeight int) {
 				cacheMutex.RLock()
 				total := 1
 				if len(cachedData) > 0 {
-					total = GetTotalPages(cachedData, screenWidth, screenHeight)
+					total = GetTotalPages(cachedData, screenHeight)
 				}
 				cacheMutex.RUnlock()
 				if total == 0 {
@@ -418,7 +418,7 @@ func startTouchListener(screenWidth, screenHeight int) {
 			cacheMutex.RLock()
 			total := 1
 			if len(cachedData) > 0 {
-				total = GetTotalPages(cachedData, screenWidth, screenHeight)
+				total = GetTotalPages(cachedData, screenHeight)
 			}
 			cacheMutex.RUnlock()
 			if total <= 1 {

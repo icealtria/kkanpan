@@ -7,7 +7,7 @@ import (
 
 func TestSparklinePoints(t *testing.T) {
 	// Less than 2 prices
-	pts, minVal, maxVal, rng := sparklinePoints([]float64{1.0}, "sh600519", 100, 50)
+	pts, minVal, maxVal, rng := sparklinePoints([]float64{1.0}, 100, 50)
 	if pts != nil {
 		t.Error("expected nil for single price")
 	}
@@ -16,7 +16,7 @@ func TestSparklinePoints(t *testing.T) {
 	}
 
 	// Normal case
-	pts, minVal, maxVal, rng = sparklinePoints([]float64{10, 20, 30, 40, 50}, "sh600519", 100, 50)
+	pts, minVal, maxVal, rng = sparklinePoints([]float64{10, 20, 30, 40, 50}, 100, 50)
 	if len(pts) != 5 {
 		t.Fatalf("expected 5 points, got %d", len(pts))
 	}
@@ -28,7 +28,7 @@ func TestSparklinePoints(t *testing.T) {
 	}
 
 	// All same prices
-	pts, _, _, rng = sparklinePoints([]float64{5, 5, 5}, "sh600519", 100, 50)
+	pts, _, _, rng = sparklinePoints([]float64{5, 5, 5}, 100, 50)
 	if len(pts) != 3 {
 		t.Fatalf("expected 3 points, got %d", len(pts))
 	}
@@ -37,7 +37,7 @@ func TestSparklinePoints(t *testing.T) {
 	}
 
 	// Two prices
-	pts, minVal, maxVal, _ = sparklinePoints([]float64{100, 200}, "sh600519", 200, 80)
+	pts, minVal, maxVal, _ = sparklinePoints([]float64{100, 200}, 200, 80)
 	if len(pts) != 2 {
 		t.Fatalf("expected 2 points, got %d", len(pts))
 	}
