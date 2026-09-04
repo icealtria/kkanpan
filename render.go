@@ -10,12 +10,12 @@ import (
 
 var globalCanvas *image.Gray
 
-func sparklinePoints(prices []float64, w, h int) (pts []string, minVal, maxVal, rng float64) {
+func sparklineRange(prices []float64) (minVal, maxVal, rng float64) {
 	if len(prices) < 2 {
-		return nil, 0, 0, 1
+		return 0, 0, 1
 	}
 	minVal, maxVal = prices[0], prices[0]
-	for _, p := range prices {
+	for _, p := range prices[1:] {
 		if p < minVal {
 			minVal = p
 		}
@@ -27,24 +27,12 @@ func sparklinePoints(prices []float64, w, h int) (pts []string, minVal, maxVal, 
 	if rng == 0 {
 		rng = 1
 	}
-	denom := float64(len(prices) - 1)
-	pts = make([]string, 0, len(prices))
-	buf := make([]byte, 0, 32)
-	for i, p := range prices {
-		x := 2.0 + float64(i)*float64(w-4)/denom
-		y := 2.0 + (maxVal-p)*float64(h-4)/rng
-		buf = buf[:0]
-		buf = strconv.AppendFloat(buf, x, 'f', 1, 64)
-		buf = append(buf, ',')
-		buf = strconv.AppendFloat(buf, y, 'f', 1, 64)
-		pts = append(pts, string(buf))
-	}
-	return pts, minVal, maxVal, rng
+	return
 }
 
 func stockStrings(price, change, pct float64) (priceStr, chgStr string) {
 	if price > 0 {
-		priceStr = fmt.Sprintf("%.2f", price)
+		priceStr = string(strconv.AppendFloat(nil, price, 'f', 2, 64))
 	} else {
 		priceStr = "--"
 	}
@@ -54,7 +42,20 @@ func stockStrings(price, change, pct float64) (priceStr, chgStr string) {
 	} else if change < 0 {
 		arrow = "▼"
 	}
-	chgStr = fmt.Sprintf("%s %+.2f (%+.2f%%)", arrow, change, pct)
+	var buf []byte
+	buf = append(buf, arrow...)
+	buf = append(buf, ' ')
+	if change >= 0 {
+		buf = append(buf, '+')
+	}
+	buf = strconv.AppendFloat(buf, change, 'f', 2, 64)
+	buf = append(buf, " ("...)
+	if pct >= 0 {
+		buf = append(buf, '+')
+	}
+	buf = strconv.AppendFloat(buf, pct, 'f', 2, 64)
+	buf = append(buf, "%)"...)
+	chgStr = string(buf)
 	return
 }
 
@@ -308,7 +309,7 @@ func drawSparklineGraph(img *image.Gray, item StockData, x, y, w, h int) {
 		return
 	}
 	drawRect(img, x, y, w, h, 0, 1)
-	_, minVal, maxVal, rng := sparklinePoints(prices, w, h)
+	minVal, maxVal, rng := sparklineRange(prices)
 
 	isYahoo := len(item.Timestamps) == len(prices) && item.RegularEnd > item.RegularStart
 

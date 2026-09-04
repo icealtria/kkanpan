@@ -40,13 +40,13 @@ func BenchmarkParseHM(b *testing.B) {
 	}
 }
 
-func BenchmarkSparklinePoints(b *testing.B) {
+func BenchmarkSparklineRange(b *testing.B) {
 	prices := make([]float64, 240)
 	for i := range prices {
 		prices[i] = 1800.0 + float64(i)*0.5
 	}
 	for i := 0; i < b.N; i++ {
-		sparklinePoints(prices, 480, 70)
+		sparklineRange(prices)
 	}
 }
 

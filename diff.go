@@ -75,9 +75,7 @@ func (sd *ScreenDiffer) isBlockDirty(oldImg, newImg *image.Gray, x0, y0, bs, img
 		if colEnd > len(newImg.Pix) {
 			colEnd = len(newImg.Pix)
 		}
-		oldSlice := oldImg.Pix[colStart:colEnd]
-		newSlice := newImg.Pix[colStart:colEnd]
-		if !bytes.Equal(oldSlice, newSlice) {
+		if !bytes.Equal(oldImg.Pix[colStart:colEnd], newImg.Pix[colStart:colEnd]) {
 			return true
 		}
 	}

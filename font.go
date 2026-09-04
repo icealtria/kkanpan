@@ -151,7 +151,6 @@ func DrawText(dst draw.Image, x, y int, text string, size int, col color.Color) 
 }
 
 func MeasureText(text string, size int) int {
-	// ponytail: key用 size 前缀避免中文 | 冲突, Text+size 组合缓存命中率>90% (Tab/价格重复)
 	key := strconv.Itoa(size) + "|" + text
 	fontMu.RLock()
 	if v, ok := measureCache[key]; ok {
