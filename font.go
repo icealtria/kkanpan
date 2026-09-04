@@ -34,17 +34,20 @@ func InitFont() {
 			"font.ttf",
 			"font.otf",
 
-			// 2. Kindle 原生 /mnt/us/fonts/ 目录
+			// 2. Kindle 用户字体目录
 			"/mnt/us/fonts/Kindle_Hei.ttf",
 			"/mnt/us/fonts/Songti.ttf",
 			"/mnt/us/fonts/font.ttf",
 
-			// 3. Kindle 内部固件自带黑体/宋体
-			"/usr/java/lib/fonts/Kindle_Hei.ttf",
-			"/usr/java/lib/fonts/HYGothic.ttf",
-			"/usr/java/lib/fonts/Songti.ttf",
-			"/usr/java/lib/fonts/Kindle_Song.ttf",
-			"/usr/share/fonts/default/Type1/Kindle_Hei.ttf",
+			// 3. Kindle 内部固件自带字体
+			"/usr/java/lib/fonts/STHeitiMedium.ttf",
+			"/usr/java/lib/fonts/STHeitiBold.ttf",
+			"/usr/java/lib/fonts/STSongMedium.ttf",
+			"/usr/java/lib/fonts/STSongBold.ttf",
+			"/usr/java/lib/fonts/STHeitiTC.ttf",
+			"/usr/java/lib/fonts/STSongTC.ttf",
+			"/usr/java/lib/fonts/MTChineseSurrogates.ttf",
+			"/usr/java/lib/fonts/code2000.ttf",
 
 			// 4. 开发调试环境 (macOS / Linux)
 			"/System/Library/Fonts/PingFang.ttc",
