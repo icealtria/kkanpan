@@ -127,9 +127,9 @@ func fetchYahoo(code string) (prices []float64, timestamps []int64, regStart, re
 		Chart struct {
 			Result []struct {
 				Meta struct {
-					RegularMarketPrice float64 `json:"regularMarketPrice"`
-					PreviousClose      float64 `json:"previousClose"`
-					ChartPreviousClose float64 `json:"chartPreviousClose"`
+					RegularMarketPrice   float64 `json:"regularMarketPrice"`
+					PreviousClose        float64 `json:"previousClose"`
+					ChartPreviousClose   float64 `json:"chartPreviousClose"`
 					CurrentTradingPeriod struct {
 						Regular struct {
 							Start int64 `json:"start"`
@@ -219,7 +219,7 @@ func fetchGtimgMinute(code string) []float64 {
 		return nil
 	}
 	defer resp.Body.Close()
-	var j map[string]interface{}
+	var j map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&j); err != nil {
 		return nil
 	}
@@ -228,10 +228,10 @@ func fetchGtimgMinute(code string) []float64 {
 			return nil
 		}
 	}
-	dataMap, _ := j["data"].(map[string]interface{})
-	item, _ := dataMap[code].(map[string]interface{})
-	d, _ := item["data"].(map[string]interface{})
-	rowsIf, _ := d["data"].([]interface{})
+	dataMap, _ := j["data"].(map[string]any)
+	item, _ := dataMap[code].(map[string]any)
+	d, _ := item["data"].(map[string]any)
+	rowsIf, _ := d["data"].([]any)
 	rows := make([]string, 0, len(rowsIf))
 	for _, r := range rowsIf {
 		if s, ok := r.(string); ok {
@@ -396,7 +396,7 @@ func refreshData() []StockData {
 		items = append(items, StockData{
 			Code: code, Name: c.Name, Group: c.Group,
 			Price: price, Change: change, Pct: pct, Prev: prev,
-			Prices: prices,
+			Prices:     prices,
 			Timestamps: cRes.timestamps, RegularStart: cRes.regStart, RegularEnd: cRes.regEnd, ChartPrevClose: cRes.chartPrev,
 		})
 	}

@@ -137,10 +137,7 @@ func DrawText(dst draw.Image, x, y int, text string, size int, col color.Color) 
 	}
 
 	if grayImg, ok := dst.(*image.Gray); ok {
-		scale := size / 16
-		if scale < 1 {
-			scale = 1
-		}
+		scale := max(size/16, 1)
 		grayCol := uint8(0)
 		if r, g, b, _ := col.RGBA(); r > 0x8000 || g > 0x8000 || b > 0x8000 {
 			grayCol = 255
@@ -166,10 +163,7 @@ func MeasureText(text string, size int) int {
 		d := &font.Drawer{Face: face}
 		w = d.MeasureString(text).Ceil()
 	} else {
-		scale := size / 16
-		if scale < 1 {
-			scale = 1
-		}
+		scale := max(size/16, 1)
 		w = len(text) * 8 * scale
 	}
 	fontMu.Lock()

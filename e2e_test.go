@@ -210,7 +210,7 @@ func TestE2E_RenderImage_MultiPage(t *testing.T) {
 	var data []StockData
 	groups := []string{"a-share", "us", "hk"}
 	for _, g := range groups {
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			data = append(data, StockData{
 				Code: fmt.Sprintf("sh%06d", i), Name: fmt.Sprintf("Stock%d", i), Group: g,
 				Price: float64(100 + i), Change: float64(i - 5), Pct: float64(i) * 0.1, Prev: float64(99 + i),
@@ -241,35 +241,6 @@ func TestE2E_RenderImage_MultiPage(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("Saved multi-page image: %s", path)
-}
-
-func TestE2E_RenderSVG(t *testing.T) {
-	setupTestGlobals()
-	data := mockStockData()
-
-	svg := renderScreenSVG(data, 1072, 1448)
-	if svg == "" {
-		t.Fatal("renderScreenSVG returned empty")
-	}
-	if !strings.HasPrefix(svg, "<svg") {
-		t.Error("SVG should start with <svg")
-	}
-	if !strings.Contains(svg, "KKANPAN") {
-		t.Error("SVG should contain KKANPAN header")
-	}
-	if !strings.Contains(svg, "贵州茅台") {
-		t.Error("SVG should contain stock name")
-	}
-	if !strings.Contains(svg, "1800.50") {
-		t.Error("SVG should contain stock price")
-	}
-
-	dir := t.TempDir()
-	path := filepath.Join(dir, "e2e.svg")
-	if err := os.WriteFile(path, []byte(svg), 0644); err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("Saved SVG: %s", path)
 }
 
 // TestE2E_MockHTTP_TencentAPI mocks the tencent HTTP API and verifies parseQT integration

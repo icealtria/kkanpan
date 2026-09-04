@@ -52,13 +52,7 @@ func BenchmarkSparklinePoints(b *testing.B) {
 
 func BenchmarkStockStrings(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		stockStrings(1800.50, 10.30, 0.57, false)
-	}
-}
-
-func BenchmarkStockStrings_SVG(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		stockStrings(1800.50, 10.30, 0.57, true)
+		stockStrings(1800.50, 10.30, 0.57)
 	}
 }
 

@@ -6,7 +6,6 @@ import (
 	"image/color"
 	"math"
 	"strconv"
-	"strings"
 )
 
 var globalCanvas *image.Gray // 复用渲染画布, 避免每次 NewGray 分配 ~1.5MB
@@ -43,28 +42,17 @@ func sparklinePoints(prices []float64, code string, w, h int) (pts []string, min
 	return pts, minVal, maxVal, rng
 }
 
-func stockStrings(price, change, pct float64, isSVG bool) (priceStr, chgStr string) {
+func stockStrings(price, change, pct float64) (priceStr, chgStr string) {
 	if price > 0 {
 		priceStr = fmt.Sprintf("%.2f", price)
 	} else {
 		priceStr = "--"
 	}
 	arrow := " "
-	if isSVG {
-		arrow = ""
-	}
 	if change > 0 {
-		if isSVG {
-			arrow = "^"
-		} else {
-			arrow = "▲"
-		}
+		arrow = "▲"
 	} else if change < 0 {
-		if isSVG {
-			arrow = "v"
-		} else {
-			arrow = "▼"
-		}
+		arrow = "▼"
 	}
 	chgStr = fmt.Sprintf("%s %+.2f (%+.2f%%)", arrow, change, pct)
 	return
@@ -122,33 +110,21 @@ func drawRect(img *image.Gray, x, y, w, h int, col uint8, border int) {
 	H := img.Rect.Dy()
 	stride := img.Stride
 	pix := img.Pix
-	for bx := 0; bx < border; bx++ {
+	for bx := range border {
 		yt := y + bx
 		yb := y + h - 1 - bx
 		if yt >= 0 && yt < H {
 			off := yt * stride
-			xs := x
-			if xs < 0 {
-				xs = 0
-			}
-			xe := x + w
-			if xe > W {
-				xe = W
-			}
+			xs := max(x, 0)
+			xe := min(x+w, W)
 			for i := xs; i < xe; i++ {
 				pix[off+i] = col
 			}
 		}
 		if yb >= 0 && yb < H && yb != yt {
 			off := yb * stride
-			xs := x
-			if xs < 0 {
-				xs = 0
-			}
-			xe := x + w
-			if xe > W {
-				xe = W
-			}
+			xs := max(x, 0)
+			xe := min(x+w, W)
 			for i := xs; i < xe; i++ {
 				pix[off+i] = col
 			}
@@ -156,27 +132,15 @@ func drawRect(img *image.Gray, x, y, w, h int, col uint8, border int) {
 		xt := x + bx
 		xr := x + w - 1 - bx
 		if xt >= 0 && xt < W {
-			ys := y
-			if ys < 0 {
-				ys = 0
-			}
-			ye := y + h
-			if ye > H {
-				ye = H
-			}
+			ys := max(y, 0)
+			ye := min(y+h, H)
 			for j := ys; j < ye; j++ {
 				pix[j*stride+xt] = col
 			}
 		}
 		if xr >= 0 && xr < W && xr != xt {
-			ys := y
-			if ys < 0 {
-				ys = 0
-			}
-			ye := y + h
-			if ye > H {
-				ye = H
-			}
+			ys := max(y, 0)
+			ye := min(y+h, H)
 			for j := ys; j < ye; j++ {
 				pix[j*stride+xr] = col
 			}
@@ -289,12 +253,12 @@ func drawChar(img *image.Gray, x, y int, ch rune, scale int, col uint8) int {
 			continue
 		}
 		baseY := y + row*scale
-		for colIdx := 0; colIdx < 8; colIdx++ {
+		for colIdx := range 8 {
 			if (b & (0x80 >> colIdx)) == 0 {
 				continue
 			}
 			baseX := x + colIdx*scale
-			for sy := 0; sy < scale; sy++ {
+			for sy := range scale {
 				py := baseY + sy
 				if py < 0 || py >= H {
 					continue
@@ -315,12 +279,12 @@ func drawChar(img *image.Gray, x, y int, ch rune, scale int, col uint8) int {
 					if end <= 0 {
 						continue
 					}
-					for sx := 0; sx < end; sx++ {
+					for sx := range end {
 						pix[off+sx] = col
 					}
 					continue
 				}
-				for sx := 0; sx < scale; sx++ {
+				for sx := range scale {
 					pix[off+sx] = col
 				}
 			}
@@ -452,10 +416,7 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 		tx := 30 + i*(tabW+tabGap)
 		selected := (viewMode == t.Key)
 		textW := MeasureText(t.Label, 24)
-		padX := (tabW - textW) / 2
-		if padX < 2 {
-			padX = 2
-		}
+		padX := max((tabW-textW)/2, 2)
 		if selected {
 			fillRect(img, tx, tabY, tabW, tabH, 0)
 			DrawText(img, tx+padX, tabY+12, t.Label, 24, color.White)
@@ -510,7 +471,7 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 			DrawText(img, bl.Price.X-priceW, bl.Price.Y, priceStr, bl.Price.Size, color.Black)
 			DrawText(img, bl.Chg.X-chgW, bl.Chg.Y, chgStr, bl.Chg.Size, color.Black)
 		} else {
-			priceStr, chgStr := stockStrings(item.Price, item.Change, item.Pct, false)
+			priceStr, chgStr := stockStrings(item.Price, item.Change, item.Pct)
 			if len(item.Prices) > 2 {
 				drawSparklineGraph(img, item, bl.Spark.X, bl.Spark.Y, bl.Spark.W, bl.Spark.H)
 			}
@@ -538,151 +499,4 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 	statusW := MeasureText(statusStr, 18)
 	DrawText(img, width-30-statusW, height-24, statusStr, 18, color.Black)
 	return img
-}
-
-func renderScreenSVG(data []StockData, width, height int) string {
-	viewMode := GetViewMode()
-	effectiveGroup, isAuto := GetEffectiveGroup(viewMode)
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf(`<svg width="%d" height="%d" viewBox="0 0 %d %d" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">`, width, height, width, height))
-	sb.WriteString(`<rect width="100%" height="100%" fill="white"/>`)
-
-	modeTag := fmt.Sprintf("[%s]", viewMode)
-	if isAuto {
-		modeTag = fmt.Sprintf("[AUTO: %s]", effectiveGroup)
-	}
-	sb.WriteString(fmt.Sprintf(`<text x="30" y="38" font-family="monospace" font-size="32" font-weight="bold">KKANPAN</text>`))
-	sb.WriteString(fmt.Sprintf(`<text x="%d" y="38" font-family="monospace" font-size="24" font-weight="bold" text-anchor="end">%s</text>`, width-270, modeTag))
-	sb.WriteString(fmt.Sprintf(`<a href="/style"><rect x="%d" y="10" width="80" height="46" fill="white" stroke="black" stroke-width="2"/><text x="%d" y="34" font-family="monospace" font-size="20" font-weight="bold" text-anchor="middle">%s</text></a>`, width-185, width-145, StyleLabel(GetStyleMode())))
-	sb.WriteString(fmt.Sprintf(`<a href="/exit"><rect x="%d" y="10" width="65" height="46" fill="white" stroke="black" stroke-width="3"/><text x="%d" y="34" font-family="monospace" font-size="20" font-weight="bold" text-anchor="middle">X</text></a>`, width-95, width-62))
-
-	modes := GetTabModes()
-	tabs := make([]struct{ Key, Label string }, len(modes))
-	for i, m := range modes {
-		tabs[i] = struct{ Key, Label string }{m, m}
-	}
-	tabCount := len(tabs)
-	tabGap := 10
-	tabTotalW := width - 60
-	tabW := (tabTotalW - (tabCount-1)*tabGap) / tabCount
-	tabY := 68
-	tabH := 50
-
-	for i, t := range tabs {
-		tx := 30 + i*(tabW+tabGap)
-		selected := (viewMode == t.Key)
-		if selected {
-			sb.WriteString(fmt.Sprintf(`<a href="/switch?view=%s"><rect x="%d" y="%d" width="%d" height="%d" fill="black"/><text x="%d" y="%d" font-family="monospace" font-size="18" fill="white" text-anchor="middle">%s</text></a>`, t.Key, tx, tabY, tabW, tabH, tx+tabW/2, tabY+30, t.Label))
-		} else {
-			sb.WriteString(fmt.Sprintf(`<a href="/switch?view=%s"><rect x="%d" y="%d" width="%d" height="%d" fill="white" stroke="black" stroke-width="2"/><text x="%d" y="%d" font-family="monospace" font-size="18" fill="black" text-anchor="middle">%s</text></a>`, t.Key, tx, tabY, tabW, tabH, tx+tabW/2, tabY+30, t.Label))
-		}
-	}
-
-	sb.WriteString(fmt.Sprintf(`<line x1="30" y1="128" x2="%d" y2="128" stroke="black" stroke-width="3"/>`, width-30))
-
-	pages := paginate(data, width, height)
-	totalPages := len(pages)
-	curPage := clampPage(totalPages)
-	var curBlocks []block
-	if totalPages > 0 && curPage < totalPages {
-		curBlocks = pages[curPage]
-	}
-	pl := ComputePageLayout(curBlocks, width, height)
-	style := GetStyleMode()
-	for _, bl := range pl.Blocks {
-		if bl.IsHeader {
-			sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="%d" height="%d" fill="black"/>`, bl.Bar.X, bl.Bar.Y, bl.Bar.W, bl.Bar.H))
-			sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="%d" fill="white">[ %s ]</text>`, bl.BarText.X, bl.BarText.Y+16, bl.BarText.Size, bl.Group))
-			continue
-		}
-		item := bl.Data
-		nameStr := item.Name
-		if nameStr == "" {
-			nameStr = item.Code
-		}
-		sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="%d"/>`, bl.Card.X, bl.Card.Y, bl.Card.W, bl.Card.H, cardBorder))
-		sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="%d">%s</text>`, bl.Name.X, bl.Name.Y+bl.Name.Size, bl.Name.Size, nameStr))
-		sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="%d" fill="#666">%s</text>`, bl.Code.X, bl.Code.Y+bl.Code.Size, bl.Code.Size, item.Code))
-		priceStr, chgStr := stockStrings(item.Price, item.Change, item.Pct, true)
-		if len(item.Prices) > 2 {
-			gx, gy, sparkW, sparkH := bl.Spark.X, bl.Spark.Y, bl.Spark.W, bl.Spark.H
-			prices := item.Prices
-			minVal, maxVal := prices[0], prices[0]
-			for _, p := range prices {
-				if p < minVal {
-					minVal = p
-				}
-				if p > maxVal {
-					maxVal = p
-				}
-			}
-			isYahoo := len(item.Timestamps) == len(prices) && item.RegularEnd > item.RegularStart
-			refVal := item.Prev
-			if isYahoo {
-				refVal = item.ChartPrevClose
-			}
-			if refVal == 0 {
-				refVal = (minVal + maxVal) / 2
-			}
-			if style == "large" {
-				if refVal < minVal {
-					minVal = refVal
-				}
-				if refVal > maxVal {
-					maxVal = refVal
-				}
-			} else {
-				if refVal < minVal || refVal > maxVal {
-					refVal = 0
-				}
-			}
-			rng := maxVal - minVal
-			if rng == 0 {
-				rng = 1
-			}
-			if refVal > 0 {
-				refY := float64(gy) + 2.0 + (maxVal-refVal)*float64(sparkH-4)/rng
-				sb.WriteString(fmt.Sprintf(`<line x1="%d" y1="%.1f" x2="%d" y2="%.1f" stroke="black" stroke-width="1" stroke-dasharray="4,4"/>`, gx+4, refY, gx+sparkW-4, refY))
-			}
-			var totalSec float64
-			if isYahoo {
-				totalSec = float64(item.RegularEnd - item.RegularStart)
-			}
-			total := chartTotal(item.Code, len(prices))
-			pts := make([]string, 0, len(prices))
-			for i, p := range prices {
-				var x float64
-				if isYahoo {
-					x = float64(gx) + 2.0 + float64(item.Timestamps[i]-item.RegularStart)*float64(sparkW-4)/totalSec
-				} else {
-					x = float64(gx) + 2.0 + float64(i)*float64(sparkW-4)/float64(total)
-				}
-				y := float64(gy) + 2.0 + (maxVal-p)*float64(sparkH-4)/rng
-				pts = append(pts, strconv.FormatFloat(x, 'f', 1, 64)+","+strconv.FormatFloat(y, 'f', 1, 64))
-			}
-			sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="1"/>`, gx, gy, sparkW, sparkH))
-			sb.WriteString(fmt.Sprintf(`<polyline fill="none" stroke="black" stroke-width="1.5" points="%s"/>`, strings.Join(pts, " ")))
-		}
-		sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="%d" font-weight="bold" text-anchor="end">%s</text>`, bl.Price.X, bl.Price.Y+bl.Price.Size, bl.Price.Size, priceStr))
-		sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="%d" text-anchor="end">%s</text>`, bl.Chg.X, bl.Chg.Y+bl.Chg.Size, bl.Chg.Size, chgStr))
-	}
-
-	if totalPages > 1 {
-		indicator := fmt.Sprintf("%d / %d", curPage+1, totalPages)
-		if curPage > 0 {
-			indicator = "▲ " + indicator
-		}
-		if curPage+1 < totalPages {
-			indicator = indicator + " ▼"
-		}
-		sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="18" fill="#555" text-anchor="middle">%s</text>`, width/2, height-40, indicator))
-	}
-
-	statusStr := FormatStatusBar()
-	sb.WriteString(fmt.Sprintf(`<line x1="30" y1="%d" x2="%d" y2="%d" stroke="black" stroke-width="1"/>`, height-58, width-30, height-58))
-	sb.WriteString(fmt.Sprintf(`<text x="30" y="%d" font-family="monospace" font-size="18" fill="#888">Swipe V: flip | Tap tabs | Tap [X] exit</text>`, height-16))
-	sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="18" font-weight="bold" text-anchor="end">%s</text>`, width-30, height-16, statusStr))
-	sb.WriteString(`</svg>`)
-	return sb.String()
 }

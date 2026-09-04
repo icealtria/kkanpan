@@ -46,8 +46,8 @@ func (sd *ScreenDiffer) FindDirtyRects(oldImg, newImg *image.Gray) []DirtyRect {
 	dirty := make([]bool, cols*rows)
 	hasDirty := false
 
-	for by := 0; by < rows; by++ {
-		for bx := 0; bx < cols; bx++ {
+	for by := range rows {
+		for bx := range cols {
 			if sd.isBlockDirty(oldImg, newImg, bx*bs, by*bs, bs, w, h) {
 				dirty[by*cols+bx] = true
 				hasDirty = true
@@ -65,10 +65,7 @@ func (sd *ScreenDiffer) isBlockDirty(oldImg, newImg *image.Gray, x0, y0, bs, img
 	for y := y0; y < y0+bs && y < imgH; y++ {
 		rowStart := y * oldImg.Stride
 		colStart := rowStart + x0
-		colEnd := rowStart + x0 + bs
-		if colEnd > rowStart+imgW {
-			colEnd = rowStart + imgW
-		}
+		colEnd := min(rowStart+x0+bs, rowStart+imgW)
 		if colStart >= len(oldImg.Pix) || colStart >= len(newImg.Pix) {
 			continue
 		}
@@ -92,7 +89,7 @@ func mergeBlocks(dirty []bool, cols, rows, bs, imgW, imgH int) []DirtyRect {
 		bx0, bx1, by int
 	}
 	var spans []span
-	for by := 0; by < rows; by++ {
+	for by := range rows {
 		bx := 0
 		for bx < cols {
 			if !dirty[by*cols+bx] {

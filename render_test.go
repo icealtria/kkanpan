@@ -49,26 +49,23 @@ func TestSparklinePoints(t *testing.T) {
 func TestStockStrings(t *testing.T) {
 	tests := []struct {
 		price, change, pct float64
-		isSVG              bool
 		wantPrice          string
 		wantChgContains    string
 	}{
-		{12.50, 0.30, 2.46, false, "12.50", "▲ +0.30"},
-		{12.50, -0.30, -2.46, false, "12.50", "▼ -0.30"},
-		{12.50, 0, 0, false, "12.50", "  +0.00"},
-		{0, 0, 0, false, "--", "  +0.00"},
-		{12.50, 0.30, 2.46, true, "12.50", "^ +0.30"},
-		{12.50, -0.30, -2.46, true, "12.50", "v -0.30"},
+		{12.50, 0.30, 2.46, "12.50", "▲ +0.30"},
+		{12.50, -0.30, -2.46, "12.50", "▼ -0.30"},
+		{12.50, 0, 0, "12.50", "  +0.00"},
+		{0, 0, 0, "--", "  +0.00"},
 	}
 	for _, tt := range tests {
-		priceStr, chgStr := stockStrings(tt.price, tt.change, tt.pct, tt.isSVG)
+		priceStr, chgStr := stockStrings(tt.price, tt.change, tt.pct)
 		if priceStr != tt.wantPrice {
-			t.Errorf("stockStrings(%.2f, %.2f, %.2f, %v) price = %q, want %q",
-				tt.price, tt.change, tt.pct, tt.isSVG, priceStr, tt.wantPrice)
+			t.Errorf("stockStrings(%.2f, %.2f, %.2f) price = %q, want %q",
+				tt.price, tt.change, tt.pct, priceStr, tt.wantPrice)
 		}
 		if !strings.Contains(chgStr, tt.wantChgContains) {
-			t.Errorf("stockStrings(%.2f, %.2f, %.2f, %v) chg = %q, want to contain %q",
-				tt.price, tt.change, tt.pct, tt.isSVG, chgStr, tt.wantChgContains)
+			t.Errorf("stockStrings(%.2f, %.2f, %.2f) chg = %q, want to contain %q",
+				tt.price, tt.change, tt.pct, chgStr, tt.wantChgContains)
 		}
 	}
 }

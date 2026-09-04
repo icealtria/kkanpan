@@ -1,17 +1,31 @@
 package main
 
 const (
-	marginX      = 30
-	contentTop   = 142
+	marginX       = 30
+	contentTop    = 142
 	bottomReserve = 70
 
-	headerH    = 48
-	headerBarH = 38
-	headerGap  = 4
-
+	headerH     = 48
+	headerBarH  = 38
+	headerGap   = 4
 	normalCardH = 103
 	largeCardH  = 155
 	cardBorder  = 1
+
+	tabBarY  = 68
+	tabBarH  = 50
+	tabGap   = 10
+	tabTextY = 12
+
+	styleBtnX = -185
+	styleBtnW = 80
+	styleBtnH = 46
+	styleBtnY = 10
+
+	exitBtnX = -95
+	exitBtnW = 65
+	exitBtnH = 46
+	exitBtnY = 10
 
 	normalNameY  = 14
 	normalNameSz = 26
@@ -109,4 +123,28 @@ func layoutCard(b block, startY, width int, style string) BlockLayout {
 		bl.Chg = TextLabel{X: width - 45, Y: startY + normalChgY, Size: normalChgSz}
 	}
 	return bl
+}
+
+type TabInfo struct {
+	Key, Label string
+	X, Y, W, H int
+}
+
+func ComputeTabLayout(width int) []TabInfo {
+	modes := GetTabModes()
+	n := len(modes)
+	if n == 0 {
+		return nil
+	}
+	totalW := width - 2*marginX
+	w := (totalW - (n-1)*tabGap) / n
+	tabs := make([]TabInfo, n)
+	for i, m := range modes {
+		tabs[i] = TabInfo{
+			Key: m, Label: m,
+			X: marginX + i*(w+tabGap), Y: tabBarY,
+			W: w, H: tabBarH,
+		}
+	}
+	return tabs
 }

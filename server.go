@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"image/png"
@@ -59,14 +60,6 @@ func startHTTPServer(host string, port int) {
 		}()
 	})
 
-	http.HandleFunc("/screen.svg", func(w http.ResponseWriter, r *http.Request) {
-		d := getData()
-		svg := renderScreenSVG(d, 1072, 1448)
-		w.Header().Set("Content-Type", "image/svg+xml; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Write([]byte(svg))
-	})
-
 	http.HandleFunc("/screen.png", func(w http.ResponseWriter, r *http.Request) {
 		d := getData()
 		img := renderScreenImage(d, 1072, 1448)
@@ -78,19 +71,46 @@ func startHTTPServer(host string, port int) {
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, ".svg") {
-			http.Redirect(w, r, "/screen.svg", 302)
-			return
-		}
 		reqView := r.URL.Query().Get("view")
 		if reqView != "" {
 			SetViewMode(reqView)
 		}
+
+		d := getData()
+		img := renderScreenImage(d, 1072, 1448)
+		var buf bytes.Buffer
+		_ = png.Encode(&buf, img)
+		b64 := base64.StdEncoding.EncodeToString(buf.Bytes())
+
+		viewMode := GetViewMode()
+		tabs := ComputeTabLayout(1072)
+		styleBtnAbsX := 1072 + styleBtnX
+		exitBtnAbsX := 1072 + exitBtnX
+
+		var overlays strings.Builder
+		for _, t := range tabs {
+			selected := viewMode == t.Key
+			if selected {
+				overlays.WriteString(fmt.Sprintf(
+					`<div style="position:absolute;left:%dpx;top:%dpx;width:%dpx;height:%dpx;background:#000"></div>`,
+					t.X, t.Y, t.W, t.H))
+			} else {
+				overlays.WriteString(fmt.Sprintf(
+					`<a href="/switch?view=%s" style="position:absolute;left:%dpx;top:%dpx;width:%dpx;height:%dpx"></a>`,
+					t.Key, t.X, t.Y, t.W, t.H))
+			}
+		}
+		overlays.WriteString(fmt.Sprintf(
+			`<a href="/style" style="position:absolute;left:%dpx;top:%dpx;width:%dpx;height:%dpx"></a>`,
+			styleBtnAbsX, styleBtnY, styleBtnW, styleBtnH))
+		overlays.WriteString(fmt.Sprintf(
+			`<a href="/exit" style="position:absolute;left:%dpx;top:%dpx;width:%dpx;height:%dpx"></a>`,
+			exitBtnAbsX, exitBtnY, exitBtnW, exitBtnH))
+
+		html := fmt.Sprintf(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="60"><meta name="viewport" content="width=1072, initial-scale=1"><title>kkanpan</title><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#eee;display:flex;justify-content:center;padding:8px}.wrap{position:relative;max-width:1072px;width:100%%}img{width:100%%;height:auto;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.2);display:block}a{cursor:pointer}</style></head><body><div class="wrap"><img src="data:image/png;base64,%s" alt="kkanpan">%s</div></body></html>`,
+			b64, overlays.String())
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache")
-		d := getData()
-		svg := renderScreenSVG(d, 1072, 1448)
-		html := fmt.Sprintf(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="60"><meta name="viewport" content="width=1072, initial-scale=1"><title>kkanpan</title><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#eee;display:flex;justify-content:center;padding:8px}svg{max-width:1072px;width:100%%;height:auto;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.2)}</style></head><body>%s</body></html>`, svg)
 		w.Write([]byte(html))
 	})
 

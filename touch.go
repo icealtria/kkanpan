@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -222,13 +223,7 @@ func parseHM(s string) int {
 func matchRule(now time.Time, r AutoRule) bool {
 	if len(r.Weekdays) > 0 {
 		wd := int(now.Weekday())
-		matched := false
-		for _, w := range r.Weekdays {
-			if w == wd {
-				matched = true
-				break
-			}
-		}
+		matched := slices.Contains(r.Weekdays, wd)
 		if !matched {
 			return false
 		}

@@ -89,10 +89,7 @@ func paginate(data []StockData, width, height int) [][]block {
 	_ = width
 	eff, isAuto := GetEffectiveGroup(GetViewMode())
 	blocks := buildBlocks(data, eff, isAuto)
-	ph := height - contentTop - bottomReserve
-	if ph < 200 {
-		ph = 200
-	}
+	ph := max(height-contentTop-bottomReserve, 200)
 	var pages [][]block
 	var cur []block
 	curH := 0

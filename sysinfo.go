@@ -225,7 +225,7 @@ func versionGE(a, b string) bool {
 	parse := func(s string) int {
 		parts := strings.Split(s, ".")
 		v := 0
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			n := 0
 			if i < len(parts) {
 				for _, ch := range parts[i] {
@@ -370,7 +370,7 @@ func EnableCoexistMode() {
 		if kindleWmctrlUsed && kindleTitlebarGeom != "" {
 			time.Sleep(250 * time.Millisecond)
 			restored := false
-			for i := 0; i < 20; i++ {
+			for range 20 {
 				_ = exec.Command("sh", "-c", wmctrlCmd("-r", ":titleBar_ID:", "-e", kindleTitlebarGeom)).Run()
 				time.Sleep(250 * time.Millisecond)
 				cur := getTitlebarGeometry()
@@ -425,9 +425,10 @@ func wmctrlCmd(args ...string) string {
 	if wm == "" {
 		return "false"
 	}
-	quoted := wm
+	var quoted strings.Builder
+	quoted.WriteString(wm)
 	for _, a := range args {
-		quoted += " '" + strings.ReplaceAll(a, "'", "'\\''") + "'"
+		quoted.WriteString(" '" + strings.ReplaceAll(a, "'", "'\\''") + "'")
 	}
-	return quoted
+	return quoted.String()
 }
