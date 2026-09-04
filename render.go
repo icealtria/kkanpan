@@ -70,81 +70,6 @@ func stockStrings(price, change, pct float64, isSVG bool) (priceStr, chgStr stri
 	return
 }
 
-func svgWriteCard(sb *strings.Builder, item StockData, startY, width, cardH int, withSparkline bool) {
-	sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="1"/>`, startY, width-60, cardH))
-	nameStr := item.Name
-	if nameStr == "" {
-		nameStr = item.Code
-	}
-	sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="26">%s</text>`, startY+28, nameStr))
-	sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="18" fill="#666">%s</text>`, startY+62, item.Code))
-	priceStr, chgStr := stockStrings(item.Price, item.Change, item.Pct, true)
-	if withSparkline && len(item.Prices) > 2 {
-		gx, gy := 240, startY+20
-		sparkW, sparkH := 480, 63
-		sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="1"/>`, gx, gy, sparkW, sparkH))
-		prices := item.Prices
-		minVal, maxVal := prices[0], prices[0]
-		for _, p := range prices {
-			if p < minVal {
-				minVal = p
-			}
-			if p > maxVal {
-				maxVal = p
-			}
-		}
-		isYahoo := len(item.Timestamps) == len(prices) && item.RegularEnd > item.RegularStart
-
-		// 昨收基准价
-		refVal := item.Prev
-		if isYahoo {
-			refVal = item.ChartPrevClose
-		}
-		if refVal == 0 {
-			refVal = (minVal + maxVal) / 2
-		}
-
-		// normal: 超出当日范围就不画
-		if refVal < minVal || refVal > maxVal {
-			refVal = 0
-		}
-		rng := maxVal - minVal
-		if rng == 0 {
-			rng = 1
-		}
-
-		if refVal > 0 {
-			refY := float64(gy) + 2.0 + (maxVal-refVal)*float64(sparkH-4)/rng
-			sb.WriteString(fmt.Sprintf(`<line x1="%d" y1="%.1f" x2="%d" y2="%.1f" stroke="black" stroke-width="1" stroke-dasharray="4,4"/>`, gx+4, refY, gx+sparkW-4, refY))
-		}
-
-		// 实线
-		var totalSec float64
-		if isYahoo {
-			totalSec = float64(item.RegularEnd - item.RegularStart)
-		}
-		total := chartTotal(item.Code, len(prices))
-		pts := make([]string, 0, len(prices))
-		for i, p := range prices {
-			var x float64
-			if isYahoo {
-				x = float64(gx) + 2.0 + float64(item.Timestamps[i]-item.RegularStart)*float64(sparkW-4)/totalSec
-			} else {
-				x = float64(gx) + 2.0 + float64(i)*float64(sparkW-4)/float64(total)
-			}
-			y := float64(gy) + 2.0 + (maxVal-p)*float64(sparkH-4)/rng
-			pts = append(pts, strconv.FormatFloat(x, 'f', 1, 64)+","+strconv.FormatFloat(y, 'f', 1, 64))
-		}
-		sb.WriteString(fmt.Sprintf(`<polyline fill="none" stroke="black" stroke-width="1.5" points="%s"/>`, strings.Join(pts, " ")))
-	}
-	chgY := startY + 52
-	if withSparkline {
-		chgY = startY + 52
-	}
-	sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="34" font-weight="bold" text-anchor="end">%s</text>`, width-45, startY+28, priceStr))
-	sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="20" text-anchor="end">%s</text>`, width-45, chgY, chgStr))
-}
-
 func drawLine(img *image.Gray, x0, y0, x1, y1 int, col uint8, width int) {
 	dx := int(math.Abs(float64(x1 - x0)))
 	dy := int(math.Abs(float64(y1 - y0)))
@@ -549,25 +474,23 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 	if totalPages > 0 && curPage < totalPages {
 		curBlocks = pages[curPage]
 	}
-	startY := 142
+	pl := ComputePageLayout(curBlocks, width, height)
 	style := GetStyleMode()
-	for _, b := range curBlocks {
-		if b.isHeader {
-			fillRect(img, 30, startY+4, width-60, 38, 0)
-			DrawText(img, 45, startY+12, "[ "+b.group+" ]", 22, color.White)
-			startY += b.h
+	for _, bl := range pl.Blocks {
+		if bl.IsHeader {
+			fillRect(img, bl.Bar.X, bl.Bar.Y, bl.Bar.W, bl.Bar.H, 0)
+			DrawText(img, bl.BarText.X, bl.BarText.Y, "[ "+bl.Group+" ]", bl.BarText.Size, color.White)
 			continue
 		}
-		item := b.data
+		item := bl.Data
+		drawRect(img, bl.Card.X, bl.Card.Y, bl.Card.W, bl.Card.H, 0, cardBorder)
+		nameStr := item.Name
+		if nameStr == "" {
+			nameStr = item.Code
+		}
+		DrawText(img, bl.Name.X, bl.Name.Y, nameStr, bl.Name.Size, color.Black)
+		DrawText(img, bl.Code.X, bl.Code.Y, item.Code, bl.Code.Size, color.Gray{Y: 100})
 		if style == "large" {
-			cardH := b.h
-			drawRect(img, 30, startY, width-60, cardH, 0, 1)
-			nameStr := item.Name
-			if nameStr == "" {
-				nameStr = item.Code
-			}
-			DrawText(img, 45, startY+18, nameStr, 32, color.Black)
-			DrawText(img, 45, startY+62, item.Code, 20, color.Gray{Y: 100})
 			arrow := " "
 			if item.Change > 0 {
 				arrow = "▲"
@@ -579,34 +502,22 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 				priceStr = fmt.Sprintf("%.2f", item.Price)
 			}
 			chgStr := fmt.Sprintf("%s %+.2f (%+.2f%%)", arrow, item.Change, item.Pct)
-			chartW := width - 490
-			chartH := cardH - 30
 			if len(item.Prices) > 2 {
-				drawSparklineGraph(img, item, 210, startY+15, chartW, chartH)
+				drawSparklineGraph(img, item, bl.Spark.X, bl.Spark.Y, bl.Spark.W, bl.Spark.H)
 			}
-			priceW := MeasureText(priceStr, 38)
-			chgW := MeasureText(chgStr, 24)
-			DrawText(img, width-45-priceW, startY+16, priceStr, 38, color.Black)
-			DrawText(img, width-45-chgW, startY+64, chgStr, 24, color.Black)
-			startY += b.h
+			priceW := MeasureText(priceStr, bl.Price.Size)
+			chgW := MeasureText(chgStr, bl.Chg.Size)
+			DrawText(img, bl.Price.X-priceW, bl.Price.Y, priceStr, bl.Price.Size, color.Black)
+			DrawText(img, bl.Chg.X-chgW, bl.Chg.Y, chgStr, bl.Chg.Size, color.Black)
 		} else {
-			cardH := b.h
-			drawRect(img, 30, startY, width-60, cardH, 0, 1)
-			nameStr := item.Name
-			if nameStr == "" {
-				nameStr = item.Code
-			}
-			DrawText(img, 45, startY+14, nameStr, 26, color.Black)
-			DrawText(img, 45, startY+48, item.Code, 18, color.Gray{Y: 100})
 			priceStr, chgStr := stockStrings(item.Price, item.Change, item.Pct, false)
 			if len(item.Prices) > 2 {
-				drawSparklineGraph(img, item, 240, startY+20, 480, 63)
+				drawSparklineGraph(img, item, bl.Spark.X, bl.Spark.Y, bl.Spark.W, bl.Spark.H)
 			}
-			priceW := MeasureText(priceStr, 34)
-			chgW := MeasureText(chgStr, 20)
-			DrawText(img, width-45-priceW, startY+14, priceStr, 34, color.Black)
-			DrawText(img, width-45-chgW, startY+52, chgStr, 20, color.Black)
-			startY += b.h
+			priceW := MeasureText(priceStr, bl.Price.Size)
+			chgW := MeasureText(chgStr, bl.Chg.Size)
+			DrawText(img, bl.Price.X-priceW, bl.Price.Y, priceStr, bl.Price.Size, color.Black)
+			DrawText(img, bl.Chg.X-chgW, bl.Chg.Y, chgStr, bl.Chg.Size, color.Black)
 		}
 	}
 	if totalPages > 1 {
@@ -677,92 +588,84 @@ func renderScreenSVG(data []StockData, width, height int) string {
 	if totalPages > 0 && curPage < totalPages {
 		curBlocks = pages[curPage]
 	}
+	pl := ComputePageLayout(curBlocks, width, height)
 	style := GetStyleMode()
-	startY := 142
-	for _, b := range curBlocks {
-		if b.isHeader {
-			sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="38" fill="black"/>`, startY+4, width-60))
-			sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="22" fill="white">[ %s ]</text>`, startY+28, b.group))
-			startY += b.h
+	for _, bl := range pl.Blocks {
+		if bl.IsHeader {
+			sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="%d" height="%d" fill="black"/>`, bl.Bar.X, bl.Bar.Y, bl.Bar.W, bl.Bar.H))
+			sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="%d" fill="white">[ %s ]</text>`, bl.BarText.X, bl.BarText.Y+16, bl.BarText.Size, bl.Group))
 			continue
 		}
-		cardH := b.h
-		if style == "large" {
-			// 大卡 SVG: 放大字体+大图
-			nameStr := b.data.Name
-			if nameStr == "" {
-				nameStr = b.data.Code
+		item := bl.Data
+		nameStr := item.Name
+		if nameStr == "" {
+			nameStr = item.Code
+		}
+		sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="%d"/>`, bl.Card.X, bl.Card.Y, bl.Card.W, bl.Card.H, cardBorder))
+		sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="%d">%s</text>`, bl.Name.X, bl.Name.Y+bl.Name.Size, bl.Name.Size, nameStr))
+		sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="%d" fill="#666">%s</text>`, bl.Code.X, bl.Code.Y+bl.Code.Size, bl.Code.Size, item.Code))
+		priceStr, chgStr := stockStrings(item.Price, item.Change, item.Pct, true)
+		if len(item.Prices) > 2 {
+			gx, gy, sparkW, sparkH := bl.Spark.X, bl.Spark.Y, bl.Spark.W, bl.Spark.H
+			prices := item.Prices
+			minVal, maxVal := prices[0], prices[0]
+			for _, p := range prices {
+				if p < minVal {
+					minVal = p
+				}
+				if p > maxVal {
+					maxVal = p
+				}
 			}
-			sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="1"/>`, startY, width-60, cardH))
-			sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="28">%s</text>`, startY+30, nameStr))
-			sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="16" fill="#666">%s</text>`, startY+52, b.data.Code))
-			priceStr, chgStr := stockStrings(b.data.Price, b.data.Change, b.data.Pct, true)
-			if len(b.data.Prices) > 2 {
-				gx, gy := 210, startY+15
-				sparkW := width - 490
-				sparkH := cardH - 30
-				prices := b.data.Prices
-				minVal, maxVal := prices[0], prices[0]
-				for _, p := range prices {
-					if p < minVal {
-						minVal = p
-					}
-					if p > maxVal {
-						maxVal = p
-					}
-				}
-				isYahoo := len(b.data.Timestamps) == len(prices) && b.data.RegularEnd > b.data.RegularStart
-
-				// 昨收基准价
-				refVal := b.data.Prev
-				if isYahoo {
-					refVal = b.data.ChartPrevClose
-				}
-				if refVal == 0 {
-					refVal = (minVal + maxVal) / 2
-				}
-
-				// 扩展min/max包含参考价
+			isYahoo := len(item.Timestamps) == len(prices) && item.RegularEnd > item.RegularStart
+			refVal := item.Prev
+			if isYahoo {
+				refVal = item.ChartPrevClose
+			}
+			if refVal == 0 {
+				refVal = (minVal + maxVal) / 2
+			}
+			if style == "large" {
 				if refVal < minVal {
 					minVal = refVal
 				}
 				if refVal > maxVal {
 					maxVal = refVal
 				}
-				rng := maxVal - minVal
-				if rng == 0 {
-					rng = 1
+			} else {
+				if refVal < minVal || refVal > maxVal {
+					refVal = 0
 				}
-
+			}
+			rng := maxVal - minVal
+			if rng == 0 {
+				rng = 1
+			}
+			if refVal > 0 {
 				refY := float64(gy) + 2.0 + (maxVal-refVal)*float64(sparkH-4)/rng
 				sb.WriteString(fmt.Sprintf(`<line x1="%d" y1="%.1f" x2="%d" y2="%.1f" stroke="black" stroke-width="1" stroke-dasharray="4,4"/>`, gx+4, refY, gx+sparkW-4, refY))
-
-				// 实线
-				var totalSec float64
-				if isYahoo {
-					totalSec = float64(b.data.RegularEnd - b.data.RegularStart)
-				}
-				total := chartTotal(b.data.Code, len(prices))
-				pts := make([]string, 0, len(prices))
-				for i, p := range prices {
-					var x float64
-					if isYahoo {
-						x = float64(gx) + 2.0 + float64(b.data.Timestamps[i]-b.data.RegularStart)*float64(sparkW-4)/totalSec
-					} else {
-						x = float64(gx) + 2.0 + float64(i)*float64(sparkW-4)/float64(total)
-					}
-					y := float64(gy) + 2.0 + (maxVal-p)*float64(sparkH-4)/rng
-					pts = append(pts, strconv.FormatFloat(x, 'f', 1, 64)+","+strconv.FormatFloat(y, 'f', 1, 64))
-				}
-				sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="1"/>`, gx, gy, sparkW, sparkH))
-				sb.WriteString(fmt.Sprintf(`<polyline fill="none" stroke="black" stroke-width="1.5" points="%s"/>`, strings.Join(pts, " ")))
 			}
-			sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="28" font-weight="bold" text-anchor="end">%s</text>`, width-45, startY+32, priceStr))
-			sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="18" text-anchor="end">%s</text>`, width-45, startY+58, chgStr))
-		} else {
-			svgWriteCard(&sb, b.data, startY, width, cardH, true)
+			var totalSec float64
+			if isYahoo {
+				totalSec = float64(item.RegularEnd - item.RegularStart)
+			}
+			total := chartTotal(item.Code, len(prices))
+			pts := make([]string, 0, len(prices))
+			for i, p := range prices {
+				var x float64
+				if isYahoo {
+					x = float64(gx) + 2.0 + float64(item.Timestamps[i]-item.RegularStart)*float64(sparkW-4)/totalSec
+				} else {
+					x = float64(gx) + 2.0 + float64(i)*float64(sparkW-4)/float64(total)
+				}
+				y := float64(gy) + 2.0 + (maxVal-p)*float64(sparkH-4)/rng
+				pts = append(pts, strconv.FormatFloat(x, 'f', 1, 64)+","+strconv.FormatFloat(y, 'f', 1, 64))
+			}
+			sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="1"/>`, gx, gy, sparkW, sparkH))
+			sb.WriteString(fmt.Sprintf(`<polyline fill="none" stroke="black" stroke-width="1.5" points="%s"/>`, strings.Join(pts, " ")))
 		}
-		startY += b.h
+		sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="%d" font-weight="bold" text-anchor="end">%s</text>`, bl.Price.X, bl.Price.Y+bl.Price.Size, bl.Price.Size, priceStr))
+		sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="%d" text-anchor="end">%s</text>`, bl.Chg.X, bl.Chg.Y+bl.Chg.Size, bl.Chg.Size, chgStr))
 	}
 
 	if totalPages > 1 {

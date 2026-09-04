@@ -12,16 +12,15 @@ type block struct {
 	group    string
 	data     StockData
 	h        int
-	gap      int
 }
 
 func appendGroup(blocks []block, group string, list []StockData, cardH int) []block {
 	if len(list) == 0 {
 		return blocks
 	}
-	blocks = append(blocks, block{isHeader: true, group: group, h: 48, gap: 0})
+	blocks = append(blocks, block{isHeader: true, group: group, h: headerH})
 	for _, it := range list {
-		blocks = append(blocks, block{isHeader: false, group: group, data: it, h: cardH, gap: 0})
+		blocks = append(blocks, block{isHeader: false, group: group, data: it, h: cardH})
 	}
 	return blocks
 }
@@ -40,12 +39,12 @@ func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 				continue
 			}
 			if style == "large" {
-				blocks = append(blocks, block{isHeader: true, group: gName, h: 48, gap: 0})
+				blocks = append(blocks, block{isHeader: true, group: gName, h: headerH})
 				for _, it := range list {
-					blocks = append(blocks, block{isHeader: false, group: gName, data: it, h: 155, gap: 0})
+					blocks = append(blocks, block{isHeader: false, group: gName, data: it, h: largeCardH})
 				}
 			} else {
-				blocks = appendGroup(blocks, gName, list, 103)
+				blocks = appendGroup(blocks, gName, list, normalCardH)
 			}
 		}
 		return blocks
@@ -61,12 +60,12 @@ func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 				continue
 			}
 			if style == "large" {
-				blocks = append(blocks, block{isHeader: true, group: g, h: 48, gap: 0})
+				blocks = append(blocks, block{isHeader: true, group: g, h: headerH})
 				for _, it := range list {
-					blocks = append(blocks, block{isHeader: false, group: g, data: it, h: 155, gap: 0})
+					blocks = append(blocks, block{isHeader: false, group: g, data: it, h: largeCardH})
 				}
 			} else {
-				blocks = appendGroup(blocks, g, list, 103)
+				blocks = appendGroup(blocks, g, list, normalCardH)
 			}
 		}
 		return blocks
@@ -76,12 +75,12 @@ func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 		return blocks
 	}
 	if style == "large" {
-		blocks = append(blocks, block{isHeader: true, group: effectiveGroup, h: 48, gap: 0})
+		blocks = append(blocks, block{isHeader: true, group: effectiveGroup, h: headerH})
 		for _, it := range list {
-			blocks = append(blocks, block{isHeader: false, group: effectiveGroup, data: it, h: 155, gap: 0})
+			blocks = append(blocks, block{isHeader: false, group: effectiveGroup, data: it, h: largeCardH})
 		}
 	} else {
-		blocks = appendGroup(blocks, effectiveGroup, list, 103)
+		blocks = appendGroup(blocks, effectiveGroup, list, normalCardH)
 	}
 	return blocks
 }
@@ -90,7 +89,7 @@ func paginate(data []StockData, width, height int) [][]block {
 	_ = width
 	eff, isAuto := GetEffectiveGroup(GetViewMode())
 	blocks := buildBlocks(data, eff, isAuto)
-	ph := height - 142 - 70
+	ph := height - contentTop - bottomReserve
 	if ph < 200 {
 		ph = 200
 	}
