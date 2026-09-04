@@ -303,6 +303,16 @@ func drawString(img *image.Gray, x, y int, text string, scale int, col uint8) in
 	return curX - x
 }
 
+func drawTextRight(img *image.Gray, rightX, y int, text string, size int, col color.Color) {
+	w := MeasureText(text, size)
+	DrawText(img, rightX-w, y, text, size, col)
+}
+
+func drawTextCenter(img *image.Gray, centerX, y int, text string, size int, col color.Color) {
+	w := MeasureText(text, size)
+	DrawText(img, centerX-w/2, y, text, size, col)
+}
+
 func drawSparklineGraph(img *image.Gray, item StockData, x, y, w, h int) {
 	prices := item.Prices
 	if len(prices) < 2 {
@@ -383,7 +393,19 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 	viewMode := GetViewMode()
 	effectiveGroup, isAuto := GetEffectiveGroup(viewMode)
 
-	// ── Header: title + mode tag + buttons ──
+	pages := paginate(data, height)
+	totalPages := len(pages)
+	curPage := clampPage(totalPages)
+
+	renderHeader(img, width, viewMode, effectiveGroup, isAuto)
+	renderTabBar(img, width, viewMode)
+	drawLine(img, marginX, dividerY, width-marginX, dividerY, 0, 3)
+	renderContent(img, pages, curPage, width)
+	renderFooter(img, width, height, totalPages, curPage)
+	return img
+}
+
+func renderHeader(img *image.Gray, width int, viewMode, effectiveGroup string, isAuto bool) {
 	modeTag := fmt.Sprintf("[%s]", viewMode)
 	if isAuto {
 		modeTag = fmt.Sprintf("[AUTO: %s]", effectiveGroup)
@@ -393,36 +415,30 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 
 	styleLabel := StyleLabel(GetStyleMode())
 	drawRect(img, width+styleBtnX, styleBtnY, styleBtnW, styleBtnH, 0, 2)
-	tw := MeasureText(styleLabel, tabTextSz)
-	DrawText(img, width+styleBtnX+(styleBtnW-tw)/2, styleBtnY+8, styleLabel, tabTextSz, color.Black)
+	drawTextCenter(img, width+styleBtnX+styleBtnW/2, styleBtnY+8, styleLabel, tabTextSz, color.Black)
 
 	drawRect(img, width+exitBtnX, exitBtnY, exitBtnW, exitBtnH, 0, 3)
-	DrawText(img, width+exitBtnX+exitBtnW/2-exitBtnH/2+3, exitBtnY+8, "X", 26, color.Black)
+	drawTextCenter(img, width+exitBtnX+exitBtnW/2, exitBtnY+(exitBtnH-26)/2, "X", 26, color.Black)
+}
 
-	// ── Tab bar ──
+func renderTabBar(img *image.Gray, width int, viewMode string) {
 	for _, t := range ComputeTabLayout(width) {
-		textW := MeasureText(t.Label, tabTextSz)
-		padX := max((t.W-textW)/2, 2)
 		if viewMode == t.Key {
 			fillRect(img, t.X, t.Y, t.W, t.H, 0)
-			DrawText(img, t.X+padX, t.Y+tabTextY, t.Label, tabTextSz, color.White)
+			drawTextCenter(img, t.X+t.W/2, t.Y+tabTextY, t.Label, tabTextSz, color.White)
 		} else {
 			drawRect(img, t.X, t.Y, t.W, t.H, 0, 2)
-			DrawText(img, t.X+padX, t.Y+tabTextY, t.Label, tabTextSz, color.Black)
+			drawTextCenter(img, t.X+t.W/2, t.Y+tabTextY, t.Label, tabTextSz, color.Black)
 		}
 	}
+}
 
-	drawLine(img, marginX, dividerY, width-marginX, dividerY, 0, 3)
-
-	// ── Content area: stock cards ──
-	pages := paginate(data, height)
-	totalPages := len(pages)
-	curPage := clampPage(totalPages)
+func renderContent(img *image.Gray, pages [][]block, curPage, width int) {
 	var curBlocks []block
-	if totalPages > 0 && curPage < totalPages {
+	if len(pages) > 0 && curPage < len(pages) {
 		curBlocks = pages[curPage]
 	}
-	for _, bl := range ComputePageLayout(curBlocks, width, height).Blocks {
+	for _, bl := range ComputePageLayout(curBlocks, width, 0).Blocks {
 		if bl.IsHeader {
 			fillRect(img, bl.Bar.X, bl.Bar.Y, bl.Bar.W, bl.Bar.H, 0)
 			DrawText(img, bl.BarText.X, bl.BarText.Y, "[ "+bl.Group+" ]", bl.BarText.Size, color.White)
@@ -440,13 +456,12 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 			drawSparklineGraph(img, item, bl.Spark.X, bl.Spark.Y, bl.Spark.W, bl.Spark.H)
 		}
 		priceStr, chgStr := stockStrings(item.Price, item.Change, item.Pct)
-		priceW := MeasureText(priceStr, bl.Price.Size)
-		chgW := MeasureText(chgStr, bl.Chg.Size)
-		DrawText(img, bl.Price.X-priceW, bl.Price.Y, priceStr, bl.Price.Size, color.Black)
-		DrawText(img, bl.Chg.X-chgW, bl.Chg.Y, chgStr, bl.Chg.Size, color.Black)
+		drawTextRight(img, bl.Price.X, bl.Price.Y, priceStr, bl.Price.Size, color.Black)
+		drawTextRight(img, bl.Chg.X, bl.Chg.Y, chgStr, bl.Chg.Size, color.Black)
 	}
+}
 
-	// ── Footer: page indicator + status bar ──
+func renderFooter(img *image.Gray, width, height, totalPages, curPage int) {
 	if totalPages > 1 {
 		indicator := fmt.Sprintf("%d / %d", curPage+1, totalPages)
 		if curPage > 0 {
@@ -455,14 +470,11 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 		if curPage+1 < totalPages {
 			indicator = indicator + " ▼"
 		}
-		iw := MeasureText(indicator, statusTextSz)
-		DrawText(img, (width-iw)/2, height+pageIndicatorY, indicator, statusTextSz, color.Gray{Y: 80})
+		drawTextCenter(img, width/2, height+pageIndicatorY, indicator, statusTextSz, color.Gray{Y: 80})
 	}
 
 	statusStr := FormatStatusBar()
 	drawLine(img, marginX, height+statusLineY, width-marginX, height+statusLineY, 0, 1)
 	DrawText(img, marginX, height+statusTextY, "Swipe H: switch Tab | Swipe V: flip | Tap [X] exit", statusTextSz, color.Gray{Y: 120})
-	statusW := MeasureText(statusStr, statusTextSz)
-	DrawText(img, width-marginX-statusW, height+statusTextY, statusStr, statusTextSz, color.Black)
-	return img
+	drawTextRight(img, width-marginX, height+statusTextY, statusStr, statusTextSz, color.Black)
 }
