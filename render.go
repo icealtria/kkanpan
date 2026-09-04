@@ -71,7 +71,7 @@ func stockStrings(price, change, pct float64, isSVG bool) (priceStr, chgStr stri
 }
 
 func svgWriteCard(sb *strings.Builder, item StockData, startY, width, cardH int, withSparkline bool) {
-	sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="2"/>`, startY, width-60, cardH))
+	sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="1"/>`, startY, width-60, cardH))
 	nameStr := item.Name
 	if nameStr == "" {
 		nameStr = item.Code
@@ -80,8 +80,8 @@ func svgWriteCard(sb *strings.Builder, item StockData, startY, width, cardH int,
 	sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="18" fill="#666">%s</text>`, startY+62, item.Code))
 	priceStr, chgStr := stockStrings(item.Price, item.Change, item.Pct, true)
 	if withSparkline && len(item.Prices) > 2 {
-		gx, gy := 240, startY+12
-		sparkW, sparkH := 480, 70
+		gx, gy := 240, startY+20
+		sparkW, sparkH := 480, 63
 		sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="1"/>`, gx, gy, sparkW, sparkH))
 		prices := item.Prices
 		minVal, maxVal := prices[0], prices[0]
@@ -137,9 +137,9 @@ func svgWriteCard(sb *strings.Builder, item StockData, startY, width, cardH int,
 		}
 		sb.WriteString(fmt.Sprintf(`<polyline fill="none" stroke="black" stroke-width="1.5" points="%s"/>`, strings.Join(pts, " ")))
 	}
-	chgY := startY + 64
+	chgY := startY + 52
 	if withSparkline {
-		chgY = startY + 66
+		chgY = startY + 52
 	}
 	sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="34" font-weight="bold" text-anchor="end">%s</text>`, width-45, startY+28, priceStr))
 	sb.WriteString(fmt.Sprintf(`<text x="%d" y="%d" font-family="monospace" font-size="20" text-anchor="end">%s</text>`, width-45, chgY, chgStr))
@@ -553,15 +553,15 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 	style := GetStyleMode()
 	for _, b := range curBlocks {
 		if b.isHeader {
-			fillRect(img, 30, startY, width-60, 38, 0)
-			DrawText(img, 45, startY+8, "[ "+b.group+" ]", 22, color.White)
+			fillRect(img, 30, startY+4, width-60, 38, 0)
+			DrawText(img, 45, startY+12, "[ "+b.group+" ]", 22, color.White)
 			startY += b.h
 			continue
 		}
 		item := b.data
 		if style == "large" {
-			cardH := b.h - b.gap
-			drawRect(img, 30, startY, width-60, cardH, 0, 2)
+			cardH := b.h
+			drawRect(img, 30, startY, width-60, cardH, 0, 1)
 			nameStr := item.Name
 			if nameStr == "" {
 				nameStr = item.Code
@@ -590,8 +590,8 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 			DrawText(img, width-45-chgW, startY+64, chgStr, 24, color.Black)
 			startY += b.h
 		} else {
-			cardH := b.h - b.gap
-			drawRect(img, 30, startY, width-60, cardH, 0, 2)
+			cardH := b.h
+			drawRect(img, 30, startY, width-60, cardH, 0, 1)
 			nameStr := item.Name
 			if nameStr == "" {
 				nameStr = item.Code
@@ -600,7 +600,7 @@ func renderScreenImage(data []StockData, width, height int) *image.Gray {
 			DrawText(img, 45, startY+48, item.Code, 18, color.Gray{Y: 100})
 			priceStr, chgStr := stockStrings(item.Price, item.Change, item.Pct, false)
 			if len(item.Prices) > 2 {
-				drawSparklineGraph(img, item, 240, startY+12, 480, 70)
+				drawSparklineGraph(img, item, 240, startY+20, 480, 63)
 			}
 			priceW := MeasureText(priceStr, 34)
 			chgW := MeasureText(chgStr, 20)
@@ -681,19 +681,19 @@ func renderScreenSVG(data []StockData, width, height int) string {
 	startY := 142
 	for _, b := range curBlocks {
 		if b.isHeader {
-			sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="38" fill="black"/>`, startY, width-60))
-			sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="22" fill="white">[ %s ]</text>`, startY+24, b.group))
+			sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="38" fill="black"/>`, startY+4, width-60))
+			sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="22" fill="white">[ %s ]</text>`, startY+28, b.group))
 			startY += b.h
 			continue
 		}
-		cardH := b.h - b.gap
+		cardH := b.h
 		if style == "large" {
 			// 大卡 SVG: 放大字体+大图
 			nameStr := b.data.Name
 			if nameStr == "" {
 				nameStr = b.data.Code
 			}
-			sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="2"/>`, startY, width-60, cardH))
+			sb.WriteString(fmt.Sprintf(`<rect x="30" y="%d" width="%d" height="%d" fill="none" stroke="black" stroke-width="1"/>`, startY, width-60, cardH))
 			sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="28">%s</text>`, startY+30, nameStr))
 			sb.WriteString(fmt.Sprintf(`<text x="45" y="%d" font-family="monospace" font-size="16" fill="#666">%s</text>`, startY+52, b.data.Code))
 			priceStr, chgStr := stockStrings(b.data.Price, b.data.Change, b.data.Pct, true)

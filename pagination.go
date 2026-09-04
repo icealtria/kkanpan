@@ -19,9 +19,9 @@ func appendGroup(blocks []block, group string, list []StockData, cardH int) []bl
 	if len(list) == 0 {
 		return blocks
 	}
-	blocks = append(blocks, block{isHeader: true, group: group, h: 44, gap: 6})
+	blocks = append(blocks, block{isHeader: true, group: group, h: 48, gap: 0})
 	for _, it := range list {
-		blocks = append(blocks, block{isHeader: false, group: group, data: it, h: cardH, gap: 8})
+		blocks = append(blocks, block{isHeader: false, group: group, data: it, h: cardH, gap: 0})
 	}
 	return blocks
 }
@@ -40,9 +40,9 @@ func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 				continue
 			}
 			if style == "large" {
-				blocks = append(blocks, block{isHeader: true, group: gName, h: 44, gap: 6})
+				blocks = append(blocks, block{isHeader: true, group: gName, h: 48, gap: 0})
 				for _, it := range list {
-					blocks = append(blocks, block{isHeader: false, group: gName, data: it, h: 155, gap: 10})
+					blocks = append(blocks, block{isHeader: false, group: gName, data: it, h: 155, gap: 0})
 				}
 			} else {
 				blocks = appendGroup(blocks, gName, list, 103)
@@ -61,9 +61,9 @@ func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 				continue
 			}
 			if style == "large" {
-				blocks = append(blocks, block{isHeader: true, group: g, h: 44, gap: 6})
+				blocks = append(blocks, block{isHeader: true, group: g, h: 48, gap: 0})
 				for _, it := range list {
-					blocks = append(blocks, block{isHeader: false, group: g, data: it, h: 155, gap: 10})
+					blocks = append(blocks, block{isHeader: false, group: g, data: it, h: 155, gap: 0})
 				}
 			} else {
 				blocks = appendGroup(blocks, g, list, 103)
@@ -76,9 +76,9 @@ func buildBlocks(data []StockData, effectiveGroup string, isAuto bool) []block {
 		return blocks
 	}
 	if style == "large" {
-		blocks = append(blocks, block{isHeader: true, group: effectiveGroup, h: 44, gap: 6})
+		blocks = append(blocks, block{isHeader: true, group: effectiveGroup, h: 48, gap: 0})
 		for _, it := range list {
-			blocks = append(blocks, block{isHeader: false, group: effectiveGroup, data: it, h: 155, gap: 10})
+			blocks = append(blocks, block{isHeader: false, group: effectiveGroup, data: it, h: 155, gap: 0})
 		}
 	} else {
 		blocks = appendGroup(blocks, effectiveGroup, list, 103)
@@ -97,17 +97,11 @@ func paginate(data []StockData, width, height int) [][]block {
 	var pages [][]block
 	var cur []block
 	curH := 0
-	for i, b := range blocks {
-		if b.isHeader && curH+b.h-b.gap > ph && curH > 0 {
+	for _, b := range blocks {
+		if curH+b.h > ph && curH > 0 {
 			pages = append(pages, cur)
 			cur = nil
 			curH = 0
-		}
-		if curH+b.h-b.gap > ph && curH > 0 {
-			pages = append(pages, cur)
-			cur = nil
-			curH = 0
-			_ = i
 		}
 		cur = append(cur, b)
 		curH += b.h
