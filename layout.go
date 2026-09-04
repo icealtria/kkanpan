@@ -32,6 +32,7 @@ const (
 	largeCodeSz  = 20
 	largeSparkX  = 210
 	largeSparkY  = 15
+	largeSparkWOfs = 490
 	largePriceY  = 16
 	largePriceSz = 38
 	largeChgY    = 64
@@ -97,7 +98,7 @@ func layoutCard(b block, startY, width int, style string) BlockLayout {
 	if style == "large" {
 		bl.Name = TextLabel{X: marginX + 15, Y: startY + largeNameY, Size: largeNameSz}
 		bl.Code = TextLabel{X: marginX + 15, Y: startY + largeCodeY, Size: largeCodeSz}
-		bl.Spark = Rect{X: largeSparkX, Y: startY + largeSparkY, W: cardW - (largeSparkX - marginX), H: b.h - 30}
+		bl.Spark = Rect{X: largeSparkX, Y: startY + largeSparkY, W: width - largeSparkWOfs, H: b.h - 30}
 		bl.Price = TextLabel{X: width - 45, Y: startY + largePriceY, Size: largePriceSz}
 		bl.Chg = TextLabel{X: width - 45, Y: startY + largeChgY, Size: largeChgSz}
 	} else {
