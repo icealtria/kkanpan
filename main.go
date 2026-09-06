@@ -3,24 +3,8 @@ package main
 import (
 	"flag"
 	"log"
-	"math"
 	"time"
 )
-
-func dataEqual(a, b []StockData) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i].Code != b[i].Code ||
-			math.Abs(a[i].Price-b[i].Price) > 1e-9 ||
-			math.Abs(a[i].Change-b[i].Change) > 1e-9 ||
-			math.Abs(a[i].Pct-b[i].Pct) > 1e-9 {
-			return false
-		}
-	}
-	return true
-}
 
 func main() {
 	port := flag.Int("port", 8000, "HTTP port (requires -http)")
@@ -75,8 +59,6 @@ func main() {
 
 		img := renderScreenImage(data, *width, *height)
 		_ = screenDiffer.UpdateScreen(img, true)
-		lastData := data
-		lastView := GetViewMode()
 
 		for {
 			select {
@@ -84,29 +66,17 @@ func main() {
 				refreshCount++
 				d := refreshData()
 
-				// 数据无变化且未切换 Tab → 跳过 render+diff, CPU 零消耗
-				curView := GetViewMode()
-				if dataEqual(lastData, d) && curView == lastView {
-					log.Println("[skip] Data unchanged, skipping render")
-					continue
-				}
-				lastData = d
-				lastView = curView
-
 				img := renderScreenImage(d, *width, *height)
 				full := (refreshCount % 5) == 0
 				if err := screenDiffer.UpdateScreen(img, full); err != nil {
 					log.Printf("Screen update error: %v", err)
 				}
 			case <-triggerRefreshCh:
-				// 切 Tab 后布局完全不同，清除 diff 缓存做全屏刷新
 				log.Println("Instant refresh triggered by user interaction...")
 				screenDiffer.ClearDiffCache()
 				d := getData()
 				img := renderScreenImage(d, *width, *height)
 				_ = screenDiffer.UpdateScreen(img, false)
-				lastData = d
-				lastView = GetViewMode()
 			}
 		}
 	} else {
