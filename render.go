@@ -478,3 +478,15 @@ func renderFooter(img *image.Gray, width, height, totalPages, curPage int) {
 	DrawText(img, marginX, height+statusTextY, "Swipe H: switch Tab | Swipe V: flip | Tap [X] exit", statusTextSz, color.Gray{Y: 120})
 	drawTextRight(img, width-marginX, height+statusTextY, statusStr, statusTextSz, color.Black)
 }
+
+func renderStatusBar(img *image.Gray, width, height int) {
+	topY := height + statusLineY
+	botY := height
+	for i := topY * img.Stride; i < botY*img.Stride; i++ {
+		img.Pix[i] = 255
+	}
+	drawLine(img, marginX, topY, width-marginX, topY, 0, 1)
+	DrawText(img, marginX, height+statusTextY, "Swipe H: switch Tab | Swipe V: flip | Tap [X] exit", statusTextSz, color.Gray{Y: 120})
+	statusStr := FormatStatusBar()
+	drawTextRight(img, width-marginX, height+statusTextY, statusStr, statusTextSz, color.Black)
+}

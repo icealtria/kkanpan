@@ -64,11 +64,10 @@ func main() {
 			select {
 			case <-ticker.C:
 				refreshCount++
-				d := refreshData()
-
-				img := renderScreenImage(d, *width, *height)
+				refreshData()
+				renderStatusBar(globalCanvas, *width, *height)
 				full := (refreshCount % 5) == 0
-				if err := screenDiffer.UpdateScreen(img, full); err != nil {
+				if err := screenDiffer.UpdateScreen(globalCanvas, full); err != nil {
 					log.Printf("Screen update error: %v", err)
 				}
 			case <-triggerRefreshCh:
