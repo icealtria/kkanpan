@@ -3,8 +3,24 @@ package main
 import (
 	"flag"
 	"log"
+	"math"
 	"time"
 )
+
+func dataChanged(a, b []StockData) bool {
+	if len(a) != len(b) {
+		return true
+	}
+	for i := range a {
+		if a[i].Code != b[i].Code ||
+			math.Abs(a[i].Price-b[i].Price) > 1e-9 ||
+			math.Abs(a[i].Change-b[i].Change) > 1e-9 ||
+			math.Abs(a[i].Pct-b[i].Pct) > 1e-9 {
+			return true
+		}
+	}
+	return false
+}
 
 func main() {
 	port := flag.Int("port", 8000, "HTTP port (requires -http)")
@@ -59,17 +75,27 @@ func main() {
 
 		img := renderScreenImage(data, *width, *height)
 		_ = screenDiffer.UpdateScreen(img, true)
+		lastData := data
 
 		for {
 			select {
 			case <-ticker.C:
 				refreshCount++
-				refreshData()
-				renderStatusBar(globalCanvas, *width, *height)
-				full := (refreshCount % 5) == 0
-				if err := screenDiffer.UpdateScreen(globalCanvas, full); err != nil {
-					log.Printf("Screen update error: %v", err)
+				d := refreshData()
+
+				if dataChanged(lastData, d) {
+					img := renderScreenImage(d, *width, *height)
+					full := (refreshCount % 5) == 0
+					if err := screenDiffer.UpdateScreen(img, full); err != nil {
+						log.Printf("Screen update error: %v", err)
+					}
+				} else {
+					renderStatusBar(globalCanvas, *width, *height)
+					if err := screenDiffer.UpdateScreen(globalCanvas, false); err != nil {
+						log.Printf("Screen update error: %v", err)
+					}
 				}
+				lastData = d
 			case <-triggerRefreshCh:
 				log.Println("Instant refresh triggered by user interaction...")
 				screenDiffer.ClearDiffCache()
