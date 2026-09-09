@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"io"
 	"log"
-	"math"
 	"os"
 	"os/exec"
 	"slices"
@@ -55,6 +54,13 @@ var (
 
 func init() {
 	touchEnabled.Store(true)
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 func GetViewMode() string {
@@ -310,7 +316,6 @@ func startTouchListener(screenWidth, screenHeight int) {
 
 	buf := make([]byte, 16)
 	var curX, curY, startX, startY int
-	var startTime time.Time
 	touching := false
 
 	handleTap := func(x, y int) {
@@ -385,63 +390,6 @@ func startTouchListener(screenWidth, screenHeight int) {
 		}
 	}
 
-	handleSwipe := func(sx, sy, ex, ey int, dur time.Duration) bool {
-		dx := ex - sx
-		dy := ey - sy
-		adx := dx
-		if adx < 0 {
-			adx = -adx
-		}
-		ady := dy
-		if ady < 0 {
-			ady = -ady
-		}
-		if dur > 700*time.Millisecond || dur < 80*time.Millisecond {
-			return false
-		}
-		// 轻触容差: KOReader PAN_THRESHOLD≈63px@300ppi, 漂移<12px视为tap不判swipe
-		if adx < 12 && ady < 12 {
-			return false
-		}
-		// 速度 = 欧氏距离 / 时长, 需 >0.4px/ms (400px/s) 才算有意滑动, 过滤慢拖误触
-		dist := math.Sqrt(float64(dx*dx + dy*dy))
-		ms := float64(dur.Milliseconds())
-		if ms < 1 {
-			ms = 1
-		}
-		velocity := dist / ms // px/ms
-		if velocity < 0.4 {
-			return false
-		}
-		// 仅保留垂直滑动翻页，水平手势已移除（易误触，Tab 改为点按切换）
-		if ady > 120 && ady > adx*2 {
-			cacheMutex.RLock()
-			total := 1
-			if len(cachedData) > 0 {
-				total = GetTotalPages(cachedData, screenHeight)
-			}
-			cacheMutex.RUnlock()
-			if total <= 1 {
-				return false
-			}
-			if dy < 0 {
-				if NextPage(total) {
-					log.Printf("Swipe up: next page %d/%d", GetCurrentPage()+1, total)
-					triggerPageRefresh()
-					return true
-				}
-			} else {
-				if PrevPage() {
-					log.Printf("Swipe down: prev page %d/%d", GetCurrentPage()+1, total)
-					triggerPageRefresh()
-					return true
-				}
-			}
-			return false
-		}
-		return false
-	}
-
 	for {
 		_, err := io.ReadFull(file, buf)
 		if err != nil {
@@ -474,24 +422,15 @@ func startTouchListener(screenWidth, screenHeight int) {
 			if evVal == 1 {
 				touching = true
 				startX, startY = curX, curY
-				startTime = time.Now()
 			} else if evVal == 0 && touching {
 				touching = false
 				if curX == 0 && curY == 0 {
 					curX, curY = startX, startY
 				}
-				if !startTime.IsZero() {
-					if handleSwipe(startX, startY, curX, curY, time.Since(startTime)) {
-						startX, startY = 0, 0
-						startTime = time.Time{}
-						continue
-					}
-				}
 				if curX > 0 && curY > 0 {
 					go handleTap(curX, curY)
 				}
 				startX, startY = 0, 0
-				startTime = time.Time{}
 			}
 		}
 	}
