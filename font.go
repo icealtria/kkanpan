@@ -173,3 +173,31 @@ func MeasureText(text string, size int) int {
 	fontMu.Unlock()
 	return w
 }
+
+// TruncateText truncates text with "..." if it exceeds maxW pixels.
+func TruncateText(text string, size, maxW int) string {
+	if MeasureText(text, size) <= maxW {
+		return text
+	}
+	for i := len(text) - 1; i > 0; i-- {
+		if MeasureText(text[:i]+"...", size) <= maxW {
+			return text[:i] + "..."
+		}
+	}
+	return "..."
+}
+
+// SplitText splits text into at most 2 lines if it exceeds maxW pixels.
+// Returns (line1, line2, lineCount). line2 is empty if not needed.
+func SplitText(text string, size, maxW int) (string, string, int) {
+	if MeasureText(text, size) <= maxW {
+		return text, "", 1
+	}
+	// try splitting at each character from the end
+	for i := len(text) - 1; i > 0; i-- {
+		if MeasureText(text[:i], size) <= maxW {
+			return text[:i], text[i:], 2
+		}
+	}
+	return text[:1], text[1:], 2
+}

@@ -450,8 +450,15 @@ func renderContent(img *image.Gray, pages [][]block, curPage, width int) {
 		if nameStr == "" {
 			nameStr = item.Code
 		}
-		DrawText(img, bl.Name.X, bl.Name.Y, nameStr, bl.Name.Size, color.Black)
-		DrawText(img, bl.Code.X, bl.Code.Y, item.Code, bl.Code.Size, color.Gray{Y: 100})
+		maxNameW := bl.Spark.X - bl.Name.X - 5
+		line1, line2, lineCount := SplitText(nameStr, bl.Name.Size, maxNameW)
+		DrawText(img, bl.Name.X, bl.Name.Y, line1, bl.Name.Size, color.Black)
+		codeY := bl.Code.Y
+		if lineCount > 1 {
+			DrawText(img, bl.Name.X, bl.Name.Y+bl.Name.Size+2, line2, bl.Name.Size, color.Black)
+			codeY = bl.Name.Y + 2*(bl.Name.Size+2)
+		}
+		DrawText(img, bl.Code.X, codeY, item.Code, bl.Code.Size, color.Gray{Y: 100})
 		if len(item.Prices) > 2 {
 			drawSparklineGraph(img, item, bl.Spark.X, bl.Spark.Y, bl.Spark.W, bl.Spark.H)
 		}
