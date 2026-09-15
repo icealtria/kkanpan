@@ -52,6 +52,7 @@ func main() {
 	defer RestoreFrontlight()
 
 	data := refreshData()
+	UpdateDataRefreshTime()
 	log.Printf("Fetched %d stocks successfully", len(data))
 
 	if *once {
@@ -84,14 +85,10 @@ func main() {
 				d := refreshData()
 
 				if dataChanged(lastData, d) {
+					UpdateDataRefreshTime()
 					img := renderScreenImage(d, *width, *height)
 					full := (refreshCount % 5) == 0
 					if err := screenDiffer.UpdateScreen(img, full); err != nil {
-						log.Printf("Screen update error: %v", err)
-					}
-				} else {
-					renderStatusBar(globalCanvas, *width, *height)
-					if err := screenDiffer.UpdateScreen(globalCanvas, false); err != nil {
 						log.Printf("Screen update error: %v", err)
 					}
 				}

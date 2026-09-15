@@ -14,7 +14,6 @@ type KindleSystemInfo struct {
 	BatteryLevel string // e.g. "85"
 	IsCharging   bool
 	WiFiSignal   string // e.g. "3/4" 或 "OFF"
-	Time         string // HH:MM
 }
 
 var (
@@ -42,9 +41,7 @@ func GetKindleSystemInfo() KindleSystemInfo {
 }
 
 func readKindleSystemInfo() KindleSystemInfo {
-	info := KindleSystemInfo{
-		Time: time.Now().Format("15:04"),
-	}
+	info := KindleSystemInfo{}
 
 	// 直接读取 /sys 节点, 零 fork 开销 (避免 lipc-get-prop 每次 fork 进程)
 	info.BatteryLevel = readBatteryFromSys()
@@ -169,6 +166,14 @@ func signalToBar(raw string) string {
 	return "?"
 }
 
+// 数据刷新时间 (仅在股票数据实际变化时更新)
+var lastDataRefreshTime string
+
+// UpdateDataRefreshTime 记录数据刷新时间
+func UpdateDataRefreshTime() {
+	lastDataRefreshTime = time.Now().Format("15:04")
+}
+
 // FormatStatusBar 格式化底部右下角时间电量 (WiFi 已移除)
 func FormatStatusBar() string {
 	info := GetKindleSystemInfo()
@@ -176,7 +181,7 @@ func FormatStatusBar() string {
 	if info.IsCharging {
 		battStr = info.BatteryLevel + "% CHG"
 	}
-	s := info.Time + " | BATT " + battStr
+	s := "Updated: " + lastDataRefreshTime + " | BATT " + battStr
 	if !touchEnabled.Load() {
 		s += " | TOUCH OFF"
 	}
