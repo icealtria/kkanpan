@@ -1,0 +1,42 @@
+# kindle-host — the PocketJS UI runtime on Kindle Paperwhite 3.
+#
+# STANDALONE LONE-BIN CRATE (same model as hosts/psp, hosts/vita, hosts/pocketbook):
+# it lives outside any workspace with its own Cargo.lock, and path-depends on
+# the engine crates. It reuses the backend-agnostic `ui` surface
+# (pocket-ui-surface) and the core's software rasterizer, then blits the frame
+# as Gray8 through FBInk to the Kindle framebuffer.
+#
+# Cross-compile for Kindle's ARM Linux (glibc):
+#   rustup target add armv7-unknown-linux-gnueabi
+#   cargo install cargo-zigbuild
+#   cargo zigbuild --release --target armv7-unknown-linux-gnueabi
+# libfbink.a is linked statically (vendored); no runtime dependency.
+
+[package]
+name = "kindle-host"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "PocketJS UI runtime host for Kindle Paperwhite 3 via FBInk"
+
+[dependencies]
+pocketjs-core = { path = "../../engine/core", features = ["std"] }
+pocket-mod = { path = "../../engine/crates/pocket-mod" }
+pocket-ui-surface = { path = "../../engine/crates/pocket-ui-surface" }
+
+anyhow = "1"
+log = "0.4"
+env_logger = "0.11"
+
+# rquickjs needs bindgen for soft-float ARM targets
+[target.'cfg(target_arch = "arm")'.dependencies]
+rquickjs = { version = "0.12", features = ["bindgen"] }
+
+[build-dependencies]
+cc = "1"
+
+[profile.release]
+opt-level = "s"  # size-optimized (Kindle has limited storage)
+lto = true
+strip = true
+panic = "abort"
