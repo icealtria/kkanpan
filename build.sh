@@ -27,7 +27,7 @@ if [ ! -f "$FBINK_LIB" ]; then
     fi
     make -C "$FBINK_DIR" pic KINDLE=1 CC="$CROSS_CC" STATIC_LIBM=1
     mkdir -p fbinklib
-    cp "$FBINK_DIR/release/"*.pic.a "$FBINK_LIB"
+    cp "$FBINK_DIR/Release/libfbink.a" "$FBINK_LIB"
     echo "==> FBInk library built: $FBINK_LIB"
 else
     echo "==> FBInk library exists: $FBINK_LIB"
