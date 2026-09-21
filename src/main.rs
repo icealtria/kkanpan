@@ -37,7 +37,16 @@ fn pool_key(view: &str, style: &str) -> String {
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
+    // launch.sh / run_on_kindle.sh 用单横线（-once），统一归一成双横线
+    let args: Vec<String> = std::env::args().skip(1).map(|a| {
+        if let Some(rest) = a.strip_prefix('-') {
+            if !rest.starts_with('-') && rest.starts_with(|c: char| c.is_ascii_alphabetic()) {
+                return format!("--{rest}");
+            }
+        }
+        a
+    }).collect();
+    let args: Vec<String> = std::iter::once(String::new()).chain(args).collect();
     let has = |n: &str| args.iter().any(|a| a == n);
     let port: u16 = arg_val(&args, "--port", "8000").parse().unwrap_or(8000);
     let host = arg_val(&args, "--host", "0.0.0.0");
@@ -52,7 +61,7 @@ fn main() {
     let view0 = if init_view_arg.is_empty() { config::default_view() } else { init_view_arg };
     input::init_state(&view0);
     let trigger = input::init_trigger();
-    eprintln!("Starting kkanpan-rs (view={view0})...");
+    eprintln!("Starting kkanpan (view={view0})...");
 
     kindle::disable_coexist_mode();
     if config::app().dim_frontlight {

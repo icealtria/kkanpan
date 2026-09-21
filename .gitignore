@@ -1,4 +1,4 @@
 kkanpan*
-!kkanpan-rs
 !extensions/kkanpan
 .opencode
+/target

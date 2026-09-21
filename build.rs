@@ -3,7 +3,7 @@ fn main() {
     let target = std::env::var("TARGET").unwrap_or_default();
     if target.contains("linux") {
         let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-        for dir in ["../fbinklib", "../vendor-fbink/fbinklib"] {
+        for dir in ["fbinklib"] {
             let p = std::path::Path::new(&manifest).join(dir);
             if p.join("libfbink.a").exists() {
                 println!("cargo:rustc-link-search=native={}", p.display());

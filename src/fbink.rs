@@ -1,4 +1,4 @@
-// FBInk 显示层：手写 FFI（字段顺序/类型逐项对齐 vendor-fbink/gofbink/fbink.h，
+// FBInk 显示层：手写 FFI（字段顺序/类型逐项对齐 fbink/fbink.h，
 // 不用 bindgen，省掉 libclang 交叉编译），+ 脏矩形差分（对齐 diff.go）。
 #[cfg(target_os = "linux")]
 use std::os::raw::{c_char, c_int};
