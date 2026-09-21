@@ -1,5 +1,9 @@
 package main
 
+// Kindle KPW3: 1072x1448 @ 300 DPI
+// Font DPI is 300, so font sizes in points map to pixels at 300/72 ≈ 4.17x
+// Position coords are in screen pixels, font sizes are in points
+
 const (
 	marginX       = 30
 	contentTop    = 142
@@ -15,17 +19,17 @@ const (
 
 	titleX    = 30
 	titleY    = 16
-	titleSize = 32
+	titleSize = 8 // 8pt @ 300 DPI ≈ 33px
 
 	modeTagX    = -460
 	modeTagY    = 20
-	modeTagSize = 24
+	modeTagSize = 6 // 6pt @ 300 DPI ≈ 25px
 
 	tabBarY  = 68
 	tabBarH  = 50
 	tabGap   = 10
 	tabTextY = 12
-	tabTextSz = 24
+	tabTextSz = 6
 
 	styleBtnX = -185
 	styleBtnY = 10
@@ -40,32 +44,32 @@ const (
 	pageIndicatorY = -40
 	statusLineY    = -58
 	statusTextY    = -24
-	statusTextSz   = 18
+	statusTextSz   = 4 // 4pt @ 300 DPI ≈ 17px
 
 	normalNameY  = 14
-	normalNameSz = 26
+	normalNameSz = 6
 	normalCodeY  = 48
-	normalCodeSz = 18
+	normalCodeSz = 4
 	normalSparkX = 240
 	normalSparkY = 20
 	normalSparkW = 480
 	normalSparkH = 63
 	normalPriceY = 14
-	normalPriceSz = 34
+	normalPriceSz = 8
 	normalChgY   = 52
-	normalChgSz  = 20
+	normalChgSz  = 5
 
 	largeNameY   = 18
-	largeNameSz  = 32
+	largeNameSz  = 8
 	largeCodeY   = 62
-	largeCodeSz  = 20
+	largeCodeSz  = 5
 	largeSparkX  = 210
 	largeSparkY  = 15
 	largeSparkWOfs = 490
 	largePriceY  = 16
-	largePriceSz = 38
+	largePriceSz = 9
 	largeChgY    = 64
-	largeChgSz   = 24
+	largeChgSz   = 6
 )
 
 type Rect struct{ X, Y, W, H int }
@@ -114,7 +118,7 @@ func layoutHeader(b block, startY, width int) BlockLayout {
 	bl := BlockLayout{IsHeader: true, Group: b.group, H: b.h}
 	bl.Outer = Rect{X: marginX, Y: startY, W: width - 2*marginX, H: b.h}
 	bl.Bar = Rect{X: marginX, Y: startY + headerGap, W: width - 2*marginX, H: headerBarH}
-	bl.BarText = TextLabel{X: marginX + 15, Y: startY + headerGap + 8, Size: 22}
+	bl.BarText = TextLabel{X: marginX + 15, Y: startY + headerGap + 8, Size: 5}
 	return bl
 }
 

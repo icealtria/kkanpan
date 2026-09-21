@@ -109,7 +109,7 @@ func getFontFace(size int) font.Face {
 
 	face, err := opentype.NewFace(parsedFont, &opentype.FaceOptions{
 		Size:    float64(size),
-		DPI:     72,
+		DPI:     300,
 		Hinting: font.HintingFull,
 	})
 	if err != nil {

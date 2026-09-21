@@ -418,7 +418,7 @@ func renderHeader(img *image.Gray, width int, viewMode, effectiveGroup string, i
 	drawTextCenter(img, width+styleBtnX+styleBtnW/2, styleBtnY+8, styleLabel, tabTextSz, color.Black)
 
 	drawRect(img, width+exitBtnX, exitBtnY, exitBtnW, exitBtnH, 0, 3)
-	drawTextCenter(img, width+exitBtnX+exitBtnW/2, exitBtnY+(exitBtnH-26)/2, "X", 26, color.Black)
+	drawTextCenter(img, width+exitBtnX+exitBtnW/2, exitBtnY+(exitBtnH-6)/2, "X", 6, color.Black)
 }
 
 func renderTabBar(img *image.Gray, width int, viewMode string) {
@@ -455,8 +455,9 @@ func renderContent(img *image.Gray, pages [][]block, curPage, width int) {
 		DrawText(img, bl.Name.X, bl.Name.Y, line1, bl.Name.Size, color.Black)
 		codeY := bl.Code.Y
 		if lineCount > 1 {
-			DrawText(img, bl.Name.X, bl.Name.Y+bl.Name.Size+2, line2, bl.Name.Size, color.Black)
-			codeY = bl.Name.Y + 2*(bl.Name.Size+2)
+			lineGap := bl.Name.Size / 3
+			DrawText(img, bl.Name.X, bl.Name.Y+bl.Name.Size+lineGap, line2, bl.Name.Size, color.Black)
+			codeY = bl.Name.Y + 2*bl.Name.Size + lineGap
 		}
 		DrawText(img, bl.Code.X, codeY, item.Code, bl.Code.Size, color.Gray{Y: 100})
 		if len(item.Prices) > 2 {

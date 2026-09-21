@@ -101,7 +101,7 @@ func main() {
 			screenDiffer.ClearDiffCache()
 			d := getData()
 			img := renderScreenImage(d, *width, *height)
-			_ = screenDiffer.UpdateScreen(img, false)
+			_ = screenDiffer.UpdateScreen(img, true)
 		}
 	}
 }
