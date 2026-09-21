@@ -467,6 +467,7 @@ dependencies = [
  "resvg",
  "serde",
  "serde_json",
+ "skrifa",
  "tiny_http",
  "ureq",
 ]

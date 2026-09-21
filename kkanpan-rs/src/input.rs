@@ -202,10 +202,9 @@ fn handle_tap(x: i32, y: i32, sw: i32, sh: i32) {
         }
         if x > sw * 2 / 3 {
             let total = crate::render::total_pages(&crate::fetch::cached_snapshot(), sh, &view()).max(1);
-            if next_page(total) {
+            // 只有一页时点翻页区：什么都不做（之前会整屏闪一次，纯打扰）
+            if total > 1 && next_page(total) {
                 trigger_page_turn();
-            } else {
-                trigger_refresh();
             }
             return;
         }

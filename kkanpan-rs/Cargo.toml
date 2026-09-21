@@ -8,6 +8,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 minijinja = "2"
 resvg = "0.48"
+skrifa = "0.44" # 与 usvg 同版本，只做 advance 宽度测量（纯 Rust）
 libc = "0.2"
 tiny_http = "0.12"
 # ureq 预留在依赖树里（json 解析等纯 Rust 部分可用）；https 抓取切到它时再开 net-ureq

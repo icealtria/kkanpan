@@ -181,14 +181,64 @@ fn sparkline_range(prices: &[f64]) -> (f64, f64) {
     if mx == mn { (mn, mn + 1.0) } else { (mn, mx) }
 }
 
-// ponytail: 按字符数折行（CJK ~1em），不用整套 shaping；字库换了还准，英文偏保守
+// 用展示字库的真实 advance 量文本宽度（字符数启发式对数字/拉丁误差近一倍）
+fn char_widths(text: &str, font_px: i32) -> Vec<i32> {
+    let fallback = vec![font_px / 2; text.chars().count()];
+    let fs = fontset();
+    let family = resvg::usvg::fontdb::Family::Name(&fs.family);
+    let q = resvg::usvg::fontdb::Query {
+        families: &[family],
+        ..Default::default()
+    };
+    let id = match fs.db.query(&q) {
+        Some(id) => id,
+        None => return fallback,
+    };
+        fs.db
+        .with_face_data(id, |data, idx| {
+            use skrifa::MetadataProvider;
+            let font = skrifa::FontRef::from_index(data, idx).ok()?;
+            let metrics = font.glyph_metrics(
+                skrifa::instance::Size::new(font_px as f32),
+                skrifa::instance::LocationRef::default(),
+            );
+            let cmap = font.charmap();
+            Some(
+                text.chars()
+                    .map(|ch| {
+                        let w = cmap
+                            .map(ch)
+                            .and_then(|gid| metrics.advance_width(gid))
+                            .unwrap_or(font_px as f32 / 2.0);
+                        w.ceil() as i32
+                    })
+                    .collect(),
+            )
+        })
+        .flatten()
+        .unwrap_or(fallback)
+}
+
 fn split_name(name: &str, font_px: i32, max_w: i32) -> (String, String) {
-    let per = (max_w / font_px.max(1)).max(1) as usize;
     let chars: Vec<char> = name.chars().collect();
-    if chars.len() <= per {
+    let widths = char_widths(name, font_px);
+    let total: i32 = widths.iter().sum();
+    if total <= max_w {
         return (name.to_string(), String::new());
     }
-    (chars[..per].iter().collect(), chars[per..].iter().collect())
+    let mut w = 0;
+    let mut cut = 0;
+    for (i, _) in chars.iter().enumerate() {
+        w += widths.get(i).copied().unwrap_or(font_px / 2);
+        if w > max_w {
+            break;
+        }
+        cut = i + 1;
+    }
+    if cut == 0 {
+        cut = 1;
+    }
+    (chars[..cut].iter().collect(), chars[cut..].iter().collect())
 }
 
 fn spark_points(item: &StockData, large: bool, sx: i32, sy: i32, sw: i32, sh: i32) -> (String, Option<i32>) {
@@ -320,7 +370,8 @@ pub fn render_svg(data: &[StockData], width: i32, height: i32, view: &str, page:
                 let name = if item.name.is_empty() { item.code.clone() } else { item.name.clone() };
                 let max_w = sp_x - (MARGIN_X + 15) - 5;
                 let (l1, l2) = split_name(&name, name_px, max_w);
-                let code_y = if l2.is_empty() { y + code_dy } else { y + 2 * name_px + name_px / 3 };
+                // 两行时 code 顶到第二行下面：name 基线 + 一行 + 行隙（对齐 Go 版 codeY 公式）
+                let code_y = if l2.is_empty() { y + code_dy } else { y + name_dy + 2 * name_px + name_px / 3 };
                 let (pts, ref_y) = spark_points(item, large, sp_x, y + sp_dy, sp_w, sp_h);
                 let (price_s, chg_s) = stock_strings(item.price, item.change, item.pct);
                 blocks.push(CtxBlock {
@@ -433,7 +484,7 @@ fn scan_fonts(db: &mut resvg::usvg::fontdb::Database, dir: &str, depth: usize, t
             // A9 上反复 mmap/读文件是 parse 慢的主因之一
             match std::fs::read(&p) {
                 Ok(data) => {
-                    eprintln!("[font] memory-loaded {} ({}KB)", p.display(), data.len() / 1024);
+                    crate::dlog!("[font] memory-loaded {} ({}KB)", p.display(), data.len() / 1024);
                     db.load_font_source(resvg::usvg::fontdb::Source::Binary(std::sync::Arc::new(data)));
                 }
                 Err(_) => {
@@ -441,7 +492,7 @@ fn scan_fonts(db: &mut resvg::usvg::fontdb::Database, dir: &str, depth: usize, t
                 }
             }
         } else if db.load_font_file(&p).is_ok() {
-            eprintln!("[font] loaded {}", p.display());
+            crate::dlog!("[font] loaded {}", p.display());
         }
     }
 }
@@ -532,7 +583,7 @@ pub fn render_gray_page(data: &[StockData], width: i32, height: i32, view: &str,
     let gray = pixmap_to_gray(&pix);
     let t_gray = t0.elapsed() - t_tpl - t_parse - t_raster;
     let texts = svg.matches("<text").count();
-    eprintln!(
+    crate::dlog!(
         "[render] page {page}: tpl={}ms parse={}ms raster={}ms gray={}ms total={}ms (svg {}B, {texts} texts)",
         t_tpl.as_millis(), t_parse.as_millis(), t_raster.as_millis(),
         t_gray.as_millis(), t0.elapsed().as_millis(), svg.len(),

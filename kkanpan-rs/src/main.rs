@@ -5,6 +5,7 @@ mod input;
 mod kindle;
 mod render;
 mod server;
+mod util;
 
 fn data_changed(a: &[config::StockData], b: &[config::StockData]) -> bool {
     if a.len() != b.len() {
@@ -30,7 +31,8 @@ fn arg_val(args: &[String], name: &str, def: &str) -> String {
 }
 
 fn pool_key(view: &str, style: &str) -> String {
-    format!("{view}|{style}")
+    // touch 开关显示在状态栏，进 key 保证电源键切换立即重绘
+    format!("{view}|{style}|{}", crate::input::touch_enabled())
 }
 
 fn main() {
@@ -104,7 +106,7 @@ fn main() {
                     true
                 } else {
                     fast_count += 1;
-                    fast_count % 6 == 0
+                    fast_count % 10 == 0
                 };
                 differ.update(&disp, &pages[cur], width, height, do_full).unwrap();
             }

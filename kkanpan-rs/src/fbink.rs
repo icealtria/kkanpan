@@ -3,8 +3,10 @@
 #[cfg(target_os = "linux")]
 use std::os::raw::{c_char, c_int};
 
-pub const WFM_DU: u8 = 1;
-pub const WFM_GC16: u8 = 2;
+pub const WFM_DU: u8 = 1; // 快(~260ms)无闪，黑白，残影累积：小局部用
+pub const WFM_GC16: u8 = 2; // 全闪(~600ms)最干净：切视图/去鬼影用
+pub const WFM_GC4: u8 = 3; // 4 灰阶，轻闪，居中
+pub const WFM_GL16: u8 = 5; // 16 灰阶低闪：整页翻页用，比 DU 干净得多，比 GC16 快
 
 // 零初始化即合法（"Perfectly sane when fully zero-initialized"）
 #[repr(C)]
@@ -103,13 +105,13 @@ impl Display {
 
     // data: Y 灰度行优先无 padding（Kindle 上 ignore_alpha 最快，对齐 fbink.h 注释）
     pub fn write_gray(&self, data: &[u8], w: i32, h: i32, full: bool) -> Result<(), String> {
+        self.write_gray_mode(data, w, h, if full { WFM_GC16 } else { WFM_DU }, full)
+    }
+
+    pub fn write_gray_mode(&self, data: &[u8], w: i32, h: i32, wfm: u8, flash: bool) -> Result<(), String> {
         #[cfg(target_os = "linux")]
         {
-            let cfg = FBInkConfig {
-                wfm_mode: if full { WFM_GC16 } else { WFM_DU },
-                is_flashing: full,
-                ..Default::default()
-            };
+            let cfg = FBInkConfig { wfm_mode: wfm, is_flashing: flash, ..Default::default() };
             // SAFETY: data 长度由调用方保证为 w*h
             let rc = unsafe {
                 fbink_print_raw_data(self.fbfd, data.as_ptr(), w, h, data.len(), 0, 0, &cfg)
@@ -118,7 +120,7 @@ impl Display {
         }
         #[cfg(not(target_os = "linux"))]
         {
-            let _ = (data, w, h, full);
+            let _ = (data, w, h, wfm, flash);
             Ok(())
         }
     }
@@ -279,16 +281,16 @@ impl ScreenDiffer {
         }
         let rects = self.find_dirty(&old, gray, w, h);
         if rects.is_empty() {
-            eprintln!("[diff] No changes, skip update");
+            crate::dlog!("[diff] No changes, skip update");
             self.prev = Some(old);
             return Ok(());
         }
         let total = (w * h) as f64;
         let dirty: f64 = rects.iter().map(|r| (r.w * r.h) as f64).sum();
-        eprintln!("[diff] {} rects, {:.1}% changed", rects.len(), dirty / total * 100.0);
-        // 碎片多时逐个 ioctl 发几百轮 e-ink 刷新，不如一次整屏 DU
+        crate::dlog!("[diff] {} rects, {:.1}% changed", rects.len(), dirty / total * 100.0);
+        // 碎片多时逐个 ioctl 发几百轮 e-ink 刷新，不如一次整屏 GL16（低闪，比 DU 干净得多）
         if dirty / total > 0.40 || rects.len() > 15 {
-            disp.write_gray(gray, w, h, false)?;
+            disp.write_gray_mode(gray, w, h, WFM_GL16, false)?;
         } else if disp.write_gray_partial(gray, w, &rects).is_err() {
             disp.write_gray(gray, w, h, false)?;
         }
