@@ -9,13 +9,9 @@ echo "==> 检查交叉编译器: $CROSS_CC"
 if ! command -v "$CROSS_CC" &>/dev/null; then
     echo "ERROR: $CROSS_CC not found."
     echo ""
-    echo "Options:"
-    echo "  macOS:   use Docker (see below) or install via koxtoolchain"
-    echo "  Linux:   apt install gcc-arm-linux-gnueabihf"
-    echo "  Docker:  export CROSS_CC=/usr/bin/arm-linux-gnueabihf-gcc"
-    echo ""
-    echo "Quick Docker build:"
-    echo "  docker run --rm -v \$(pwd):/src -w /src shermp/fbink-build:latest bash -c './build.sh'"
+    echo "Quick podman build (no local toolchain needed):"
+    echo "  podman build -t kkanpan-build ."
+    echo "  podman run --rm -v \$(pwd):/src -w /src kkanpan-build bash -c './build.sh'"
     exit 1
 fi
 
@@ -27,20 +23,24 @@ if [ ! -f "$FBINK_LIB" ]; then
     fi
     make -C "$FBINK_DIR" pic KINDLE=1 CC="$CROSS_CC" STATIC_LIBM=1
     mkdir -p fbinklib
-    cp "$FBINK_DIR/release/"*.pic.a "$FBINK_LIB"
+    cp "$FBINK_DIR/Release/libfbink.a" "$FBINK_LIB"
     echo "==> FBInk library built: $FBINK_LIB"
+    # 替换 go-fbink-v2 自带的 Kobo 版本为 Kindle 版本
+    cp "$FBINK_LIB" vendor-fbink/fbinklib/libfbink.a
+    echo "==> Replaced go-fbink-v2 bundled libfbink.a with Kindle build"
 else
     echo "==> FBInk library exists: $FBINK_LIB"
 fi
 
-echo "==> 交叉编译 kkanpan (Kindle ARM, CGO + FBInk)..."
+echo "==> 交叉编译 kkanpan (Kindle ARM, CGO + FBInk, static)..."
 CGO_ENABLED=1 \
 GOOS=linux \
 GOARCH=arm \
 GOARM=7 \
 CC="$CROSS_CC" \
+CGO_LDFLAGS="-static" \
 go build -tags kindle \
-    -ldflags="-s -w" \
+    -ldflags="-s -w -linkmode external -extldflags '-static'" \
     -o kkanpan .
 
 mkdir -p extensions/kkanpan/bin
