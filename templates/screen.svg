@@ -8,9 +8,9 @@
 <text x="{{ w - 95 + 32 }}" y="40" font-size="25" fill="black" text-anchor="middle" font-family="{{ font_family }}">X</text>
 {% for t in tabs %}
 {% if t.selected %}<rect x="{{ t.x }}" y="{{ t.y }}" width="{{ t.w }}" height="{{ t.h }}" fill="black"/>
-<text x="{{ t.x + t.w // 2 }}" y="{{ t.y + 12 + tab_px }}" font-size="{{ tab_px }}" fill="white" text-anchor="middle" font-family="{{ font_family }}">{{ t.label }}</text>
+<text x="{{ t.x + t.w // 2 }}" y="{{ t.y + 12 + tab_px }}" font-size="{{ tab_px }}" fill="white" text-anchor="middle" font-family="{{ font_family }}">{{ t.key }}</text>
 {% else %}<rect x="{{ t.x }}" y="{{ t.y }}" width="{{ t.w }}" height="{{ t.h }}" fill="white" stroke="black" stroke-width="2"/>
-<text x="{{ t.x + t.w // 2 }}" y="{{ t.y + 12 + tab_px }}" font-size="{{ tab_px }}" fill="black" text-anchor="middle" font-family="{{ font_family }}">{{ t.label }}</text>
+<text x="{{ t.x + t.w // 2 }}" y="{{ t.y + 12 + tab_px }}" font-size="{{ tab_px }}" fill="black" text-anchor="middle" font-family="{{ font_family }}">{{ t.key }}</text>
 {% endif %}
 {% endfor %}
 <line x1="{{ margin_x }}" y1="{{ divider_y }}" x2="{{ w - margin_x }}" y2="{{ divider_y }}" stroke="black" stroke-width="3"/>

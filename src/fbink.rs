@@ -5,7 +5,6 @@ use std::os::raw::{c_char, c_int};
 
 pub const WFM_DU: u8 = 1; // 快(~260ms)无闪，黑白，残影累积：小局部用
 pub const WFM_GC16: u8 = 2; // 全闪(~600ms)最干净：切视图/去鬼影用
-pub const WFM_GC4: u8 = 3; // 4 灰阶，轻闪，居中
 pub const WFM_GL16: u8 = 5; // 16 灰阶低闪：整页翻页用，比 DU 干净得多，比 GC16 快
 
 // 零初始化即合法（"Perfectly sane when fully zero-initialized"）

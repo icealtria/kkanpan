@@ -21,53 +21,29 @@ fn now_unix() -> i64 {
         .unwrap_or(0)
 }
 
-// ---- HTTP：默认 curl 子进程（Kindle 自带 curl，零 TLS 编译风险） ----
+// ---- HTTP：ureq Agent（连接复用 + 超时 + 代理；校验证书，比 Go 版 -k 更严） ----
+static AGENT: std::sync::OnceLock<ureq::Agent> = std::sync::OnceLock::new();
 
-fn curl_get(url: &str, referer: &str) -> Option<Vec<u8>> {
-    let mut cmd = std::process::Command::new("curl");
-    cmd.args(["-sk", "--max-time", "8", "-A", "Mozilla/5.0"]);
-    let proxy = &config::app().proxy;
-    if !proxy.is_empty() {
-        cmd.args(["-x", proxy]);
-    }
+fn agent() -> &'static ureq::Agent {
+    AGENT.get_or_init(|| {
+        let mut b = ureq::Agent::config_builder()
+            .timeout_global(Some(std::time::Duration::from_secs(8)));
+        let proxy = &config::app().proxy;
+        if !proxy.is_empty() {
+            if let Ok(p) = ureq::Proxy::new(proxy) {
+                b = b.proxy(Some(p));
+            }
+        }
+        b.build().new_agent()
+    })
+}
+
+fn http_get(url: &str, referer: &str) -> Option<Vec<u8>> {
+    let mut req = agent().get(url).header("User-Agent", "Mozilla/5.0");
     if !referer.is_empty() {
-        cmd.arg("-H").arg(format!("Referer: {referer}"));
+        req = req.header("Referer", referer);
     }
-    cmd.arg(url);
-    let out = cmd.output().ok()?;
-    if out.status.success() { Some(out.stdout) } else { None }
-}
-
-#[cfg(feature = "net-ureq")]
-fn ureq_get(url: &str, referer: &str) -> Option<Vec<u8>> {
-    // 第二步用：切到 ureq+ring（仅 x86 开发机 / 验证机；armv7 上 ring 可编但慢）。
-    // 注意与 Go 版差异：此处默认校验证书（Go 版 InsecureSkipVerify）。
-    let mut b =
-        ureq::Agent::config_builder().timeout_global(Some(std::time::Duration::from_secs(8)));
-    let proxy = &config::app().proxy;
-    if !proxy.is_empty() {
-        b = b.proxy(ureq::Proxy::new(proxy).ok()?);
-    }
-    let agent = b.build().new_agent();
-    let mut resp = agent
-        .get(url)
-        .header("User-Agent", "Mozilla/5.0")
-        .header("Referer", referer)
-        .call()
-        .ok()?;
-    let mut buf = Vec::new();
-    std::io::copy(resp.body_mut().as_reader(), &mut buf).ok()?;
-    Some(buf)
-}
-
-#[cfg(not(feature = "net-ureq"))]
-fn http_get(url: &str, referer: &str) -> Option<Vec<u8>> {
-    curl_get(url, referer)
-}
-
-#[cfg(feature = "net-ureq")]
-fn http_get(url: &str, referer: &str) -> Option<Vec<u8>> {
-    ureq_get(url, referer)
+    req.call().ok()?.body_mut().read_to_vec().ok()
 }
 
 // ---- 抓取 ----

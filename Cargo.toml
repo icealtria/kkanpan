@@ -11,11 +11,5 @@ resvg = "0.48"
 skrifa = "0.44" # 与 usvg 同版本，只做 advance 宽度测量（纯 Rust）
 libc = "0.2"
 tiny_http = "0.12"
-# ureq 预留在依赖树里（json 解析等纯 Rust 部分可用）；https 抓取切到它时再开 net-ureq
-ureq = { version = "3", default-features = false, features = ["json"], optional = true }
-
-[features]
-default = []
-# Kindle 主抓取切 ureq 时用：打开 rustls(=ring)。armv7 上 ring 可编（perl+交叉CC），
-# 只是比 curl 慢；graviola 不支持 32 位 ARM，故不用 rustls-no-provider。
-net-ureq = ["ureq/rustls"]
+# TLS=ring：交叉需 perl（macOS 自带），zig 提供 CC；graviola 不支持 32 位 ARM，只能 ring
+ureq = { version = "3", default-features = false, features = ["rustls", "rustls-webpki-roots"] }

@@ -100,7 +100,6 @@ pub fn total_pages(data: &[StockData], height: i32, view: &str) -> usize {
 #[derive(Serialize)]
 struct Tab<'a> {
     key: &'a str,
-    label: &'a str,
     x: i32,
     y: i32,
     w: i32,
@@ -312,7 +311,6 @@ pub fn render_svg(data: &[StockData], width: i32, height: i32, view: &str, page:
         .enumerate()
         .map(|(i, m)| Tab {
             key: m,
-            label: m,
             x: MARGIN_X + i as i32 * (tw + TAB_GAP),
             y: TAB_BAR_Y,
             w: tw,
@@ -522,7 +520,7 @@ fn fontset() -> &'static FontSet {
                 f.families.first().map(|(s, _)| s.clone()).unwrap_or_default()
             };
             let exact = ["STHeitiMedium", "STSongMedium", "STHeiti", "STSong"];
-            let mut face = exact.iter().find_map(|w| faces.iter().find(|f| &fam_of(f) == w));
+            let face = exact.iter().find_map(|w| faces.iter().find(|f| &fam_of(f) == w));
             let pick = |keys: &[&str]| {
                 faces.iter().find(|f| {
                     let n = f.families.first().map(|(s, _)| s.to_lowercase()).unwrap_or_default();

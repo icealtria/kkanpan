@@ -136,7 +136,6 @@ fn read_event(f: &mut std::fs::File) -> Option<(u16, u16, i32)> {
 pub fn start_power_listener() {
     #[cfg(target_os = "linux")]
     std::thread::spawn(|| {
-        use std::io::Read;
         let Some(path) = find_input(&["/dev/input/event0", "/dev/input/event1", "/dev/input/event2"]) else {
             eprintln!("[Power] No input device, disabled");
             return;
@@ -150,16 +149,10 @@ pub fn start_power_listener() {
         };
         eprintln!("[Power] listener on {path}");
         loop {
-            let mut buf = [0u8; 16];
-            if f.read_exact(&mut buf).is_err() {
+            let Some((ty, code, val)) = read_event(&mut f) else {
                 std::thread::sleep(std::time::Duration::from_secs(1));
                 continue;
-            }
-            let (ty, code, val) = (
-                u16::from_le_bytes([buf[8], buf[9]]),
-                u16::from_le_bytes([buf[10], buf[11]]),
-                i32::from_le_bytes([buf[12], buf[13], buf[14], buf[15]]),
-            );
+            };
             if ty == 0x01 && code == 116 && val == 1 {
                 // KEY_POWER：切换触控开关
                 TOUCH_ON.store(!TOUCH_ON.load(Ordering::Relaxed), Ordering::Relaxed);
