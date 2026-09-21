@@ -4,10 +4,15 @@ use std::sync::{Mutex, RwLock};
 
 // ---- 缓存（对齐 fetch.go） ----
 
-static CACHED: RwLock<Vec<StockData>> = RwLock::new(Vec::new());
-static LAST_FETCH: RwLock<i64> = RwLock::new(0);
+static CACHED: std::sync::LazyLock<RwLock<HashMap<String, ViewCache>>> =
+    std::sync::LazyLock::new(|| RwLock::new(HashMap::new()));
 static PRICE_HIST: std::sync::LazyLock<Mutex<HashMap<String, Vec<f64>>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+struct ViewCache {
+    data: Vec<StockData>,
+    at: i64,
+}
 
 fn now_unix() -> i64 {
     std::time::SystemTime::now()
@@ -337,8 +342,8 @@ pub fn refresh_data(view: &str) -> Vec<StockData> {
             chart_prev_close: cr.map(|r| r.chart_prev).unwrap_or(0.0),
         });
     }
-    *CACHED.write().unwrap() = items.clone();
-    *LAST_FETCH.write().unwrap() = now_unix();
+    let at = now_unix();
+    CACHED.write().unwrap().insert(view.to_string(), ViewCache { data: items.clone(), at });
     items
 }
 
@@ -350,17 +355,23 @@ pub fn get_data(view: &str) -> Vec<StockData> {
     let ttl = config::app().cache_ttl;
     {
         let cached = CACHED.read().unwrap();
-        if now_unix() - *LAST_FETCH.read().unwrap() <= ttl && !cached.is_empty() {
-            let have: std::collections::HashSet<&str> =
-                cached.iter().map(|d| d.code.as_str()).collect();
-            if needed.iter().all(|c| have.contains(c.code.as_str())) {
-                return cached.clone();
+        if let Some(vc) = cached.get(view) {
+            if now_unix() - vc.at <= ttl && !vc.data.is_empty() {
+                let have: std::collections::HashSet<&str> =
+                    vc.data.iter().map(|d| d.code.as_str()).collect();
+                if needed.iter().all(|c| have.contains(c.code.as_str())) {
+                    return vc.data.clone();
+                }
             }
         }
     }
     refresh_data(view)
 }
 
-pub fn cached_snapshot() -> Vec<StockData> {
-    CACHED.read().unwrap().clone()
+pub fn cached_snapshot(view: &str) -> Vec<StockData> {
+    CACHED.read().unwrap().get(view).map(|vc| vc.data.clone()).unwrap_or_default()
+}
+
+pub fn last_fetch_unix(view: &str) -> i64 {
+    CACHED.read().unwrap().get(view).map(|vc| vc.at).unwrap_or(0)
 }

@@ -31,8 +31,9 @@ fn arg_val(args: &[String], name: &str, def: &str) -> String {
 }
 
 fn pool_key(view: &str, style: &str) -> String {
-    // touch 开关显示在状态栏，进 key 保证电源键切换立即重绘
-    format!("{view}|{style}|{}", crate::input::touch_enabled())
+    // touch 开关显示在状态栏，进 key 保证电源键切换立即重绘；
+    // 拉取时间进 key，数据更新后旧缓存自动失效
+    format!("{view}|{style}|{}|{}", crate::input::touch_enabled(), crate::fetch::last_fetch_unix(view))
 }
 
 fn main() {
@@ -92,11 +93,13 @@ fn main() {
     loop {
         match trigger.recv_timeout(std::time::Duration::from_secs(interval)) {
             Ok(full) => {
-                // 用户点按：池命中零渲染。切视图/风格、手动刷新走 GC16 全闪；
-                // 同视图翻页走 DU 快刷，每 6 次闪一次去鬼影。
-                let key = pool_key(&input::view(), &input::style_mode());
+                // 用户点按：先按需补拉当前视图数据（切 Tab 时覆盖缺失的代码），
+                // 池命中则零渲染。切视图/风格、手动刷新走 GC16 全闪；
+                // 同视图翻页走 DU 快刷，每 10 次闪一次去鬼影。
+                let view = input::view();
+                last = fetch::get_data(&view);
+                let key = pool_key(&view, &input::style_mode());
                 if !pool.contains_key(&key) {
-                    let view = input::view();
                     pool.insert(key.clone(), render::render_all_pages(&last, width, height, &view));
                 }
                 let pages = &pool[&key];
