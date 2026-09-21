@@ -87,6 +87,14 @@ fn main() {
     input::start_touch_listener(width, height);
     input::start_power_listener();
 
+    // 优雅退出：直接 kill 会丢下共存模式/背光不恢复
+    let term = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    for sig in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
+        if signal_hook::flag::register(sig, term.clone()).is_err() {
+            eprintln!("Failed to register signal handler for {sig}");
+        }
+    }
+
     let gray = render::render_gray(&data, width, height, &input::view());
     differ.update(&disp, &gray, width, height, true).unwrap();
     let mut last = data;
@@ -98,8 +106,14 @@ fn main() {
     );
     let mut fast_count = 0usize;
 
+    // 1 秒粒度轮询：既响应信号，又不打乱 interval 节拍
+    let mut last_tick = std::time::Instant::now();
     loop {
-        match trigger.recv_timeout(std::time::Duration::from_secs(interval)) {
+        if term.load(std::sync::atomic::Ordering::Relaxed) {
+            eprintln!("Signal received, restoring Kindle state...");
+            break;
+        }
+        match trigger.recv_timeout(std::time::Duration::from_secs(1)) {
             Ok(full) => {
                 // 切 Tab 时覆盖本地缺失的代码；切视图/风格走 GC16，同视图翻页走 DU，
                 // 每 10 次快刷全闪一次去鬼影
@@ -121,6 +135,10 @@ fn main() {
                 differ.update(&disp, &pages[cur], width, height, do_full).unwrap();
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                if last_tick.elapsed() < std::time::Duration::from_secs(interval) {
+                    continue;
+                }
+                last_tick = std::time::Instant::now();
                 count += 1;
                 let d = fetch::refresh_data(&input::view());
                 if data_changed(&last, &d) {

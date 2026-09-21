@@ -10,6 +10,7 @@ minijinja = "2"
 resvg = "0.48"
 skrifa = "0.44" # 与 usvg 同版本，只做 advance 宽度测量（纯 Rust）
 libc = "0.2"
+signal-hook = "0.3" # Ctrl+C / SIGTERM 只设原子标志，无 ring，可交叉
 tiny_http = "0.12"
 # TLS=ring：交叉需 perl（macOS 自带），zig 提供 CC；graviola 不支持 32 位 ARM，只能 ring
 ureq = { version = "3", default-features = false, features = ["rustls", "rustls-webpki-roots"] }

@@ -160,7 +160,8 @@ pub fn start_power_listener() {
 }
 
 fn handle_tap(x: i32, y: i32, sw: i32, sh: i32) {
-    if y <= 65 {        if x >= sw - 95 && x <= sw - 10 {
+    if y <= 65 {
+        if x >= sw - 95 && x <= sw - 10 {
             quit_app();
         }
         if x >= sw - 185 && x <= sw - 105 {
