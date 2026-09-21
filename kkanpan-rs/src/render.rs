@@ -502,21 +502,16 @@ pub fn render_pixmap(svg: &str) -> resvg::tiny_skia::Pixmap {
 }
 
 pub fn pixmap_to_gray(pix: &resvg::tiny_skia::Pixmap) -> Vec<u8> {
+    // 白底 premultiplied 展开：out = src + 255 - a，精确无损；
+    // 亮度系数和 256，用位移代替除法；全程无分支，LLVM 可向量化
     pix.data()
         .chunks_exact(4)
         .map(|p| {
-            // tiny-skia 存 premultiplied；A9 无硬件除法，不透明像素跳过除法
             let a = p[3] as u32;
-            if a == 0 {
-                return 255;
-            }
-            let (r, g, b) = if a == 255 {
-                (p[0] as u32, p[1] as u32, p[2] as u32) // RGBA 字节序
-            } else {
-                // 半透明边缘（crispEdges 下极少）：还原后再转灰度
-                (p[0] as u32 * 255 / a, p[1] as u32 * 255 / a, p[2] as u32 * 255 / a)
-            };
-            ((r * 299 + g * 587 + b * 114) / 1000).min(255) as u8
+            let r = p[0] as u32 + 255 - a;
+            let g = p[1] as u32 + 255 - a;
+            let b = p[2] as u32 + 255 - a;
+            ((r * 77 + g * 150 + b * 29) >> 8) as u8
         })
         .collect()
 }

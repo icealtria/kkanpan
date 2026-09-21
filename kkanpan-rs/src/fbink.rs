@@ -193,7 +193,8 @@ pub struct ScreenDiffer {
 
 impl ScreenDiffer {
     pub fn new() -> Self {
-        ScreenDiffer { prev: None, w: 0, h: 0, block: 8 }
+        // 块 24px：碎片 rect 少一个量级；碎了就整屏 DU，不逐个 ioctl
+        ScreenDiffer { prev: None, w: 0, h: 0, block: 24 }
     }
 
     fn find_dirty(&self, old: &[u8], new: &[u8], w: i32, h: i32) -> Vec<DirtyRect> {
@@ -285,7 +286,8 @@ impl ScreenDiffer {
         let total = (w * h) as f64;
         let dirty: f64 = rects.iter().map(|r| (r.w * r.h) as f64).sum();
         eprintln!("[diff] {} rects, {:.1}% changed", rects.len(), dirty / total * 100.0);
-        if dirty / total > 0.60 || rects.len() > 5 {
+        // 碎片多时逐个 ioctl 发几百轮 e-ink 刷新，不如一次整屏 DU
+        if dirty / total > 0.40 || rects.len() > 15 {
             disp.write_gray(gray, w, h, false)?;
         } else if disp.write_gray_partial(gray, w, &rects).is_err() {
             disp.write_gray(gray, w, h, false)?;

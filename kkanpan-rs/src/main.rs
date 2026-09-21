@@ -29,15 +29,13 @@ fn arg_val(args: &[String], name: &str, def: &str) -> String {
         .unwrap_or_else(|| def.to_string())
 }
 
-struct PageCache {
-    view: String,
-    style: String,
-    ver: u64,
-    pages: Vec<Vec<u8>>,
+fn pool_key(view: &str, style: &str) -> String {
+    format!("{view}|{style}")
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();    let has = |n: &str| args.iter().any(|a| a == n);
+    let args: Vec<String> = std::env::args().collect();
+    let has = |n: &str| args.iter().any(|a| a == n);
     let port: u16 = arg_val(&args, "--port", "8000").parse().unwrap_or(8000);
     let host = arg_val(&args, "--host", "0.0.0.0");
     let interval: u64 = arg_val(&args, "--interval", "60").parse().unwrap_or(60);
@@ -81,32 +79,26 @@ fn main() {
     differ.update(&disp, &gray, width, height, true).unwrap();
     let mut last = data;
     let mut count = 0usize;
-    // 翻页缓存：数据版本号 + 视图 + 风格命中时，点按只推缓存走 DU 快刷
-    let mut ver: u64 = 1;
-    let mut cache = PageCache {
-        view: input::view(),
-        style: input::style_mode(),
-        ver,
-        pages: render::render_all_pages(&last, width, height, &input::view()),
-    };
+    // 视图池：同一批数据下所有到访过的视图/风格常驻，命中零渲染
+    let mut pool: std::collections::HashMap<String, Vec<Vec<u8>>> = std::collections::HashMap::new();
+    pool.insert(
+        pool_key(&input::view(), &input::style_mode()),
+        render::render_all_pages(&last, width, height, &input::view()),
+    );
     let mut fast_count = 0usize;
 
     loop {
         match trigger.recv_timeout(std::time::Duration::from_secs(interval)) {
             Ok(full) => {
-                // 用户点按：缓存命中则零渲染。切视图/风格、手动刷新走 GC16 全闪；
+                // 用户点按：池命中零渲染。切视图/风格、手动刷新走 GC16 全闪；
                 // 同视图翻页走 DU 快刷，每 6 次闪一次去鬼影。
-                let view = input::view();
-                let style = input::style_mode();
-                if cache.view != view || cache.style != style || cache.ver != ver {
-                    cache = PageCache {
-                        pages: render::render_all_pages(&last, width, height, &view),
-                        view: view.clone(),
-                        style: style.clone(),
-                        ver,
-                    };
+                let key = pool_key(&input::view(), &input::style_mode());
+                if !pool.contains_key(&key) {
+                    let view = input::view();
+                    pool.insert(key.clone(), render::render_all_pages(&last, width, height, &view));
                 }
-                let total = cache.pages.len().max(1);
+                let pages = &pool[&key];
+                let total = pages.len().max(1);
                 let cur = input::clamp_page(total);
                 let do_full = if full {
                     true
@@ -114,20 +106,20 @@ fn main() {
                     fast_count += 1;
                     fast_count % 6 == 0
                 };
-                differ.update(&disp, &cache.pages[cur], width, height, do_full).unwrap();
+                differ.update(&disp, &pages[cur], width, height, do_full).unwrap();
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 count += 1;
                 let d = fetch::refresh_data(&input::view());
                 if data_changed(&last, &d) {
                     config::update_data_refresh_time();
-                    ver += 1;
+                    pool.clear(); // 数据变了，所有视图缓存失效
                     let view = input::view();
                     let pages = render::render_all_pages(&d, width, height, &view);
                     let total = pages.len().max(1);
                     let cur = input::clamp_page(total);
                     differ.update(&disp, &pages[cur], width, height, count % 5 == 0).unwrap();
-                    cache = PageCache { view, style: input::style_mode(), ver, pages };
+                    pool.insert(pool_key(&view, &input::style_mode()), pages);
                 }
                 last = d;
             }
