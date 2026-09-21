@@ -35,6 +35,7 @@ func main() {
 	flag.Parse()
 
 	appConfig = loadAppConfig()
+	initFileLog()
 	initClients()
 	view := *initialView
 	if view == "" {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -47,6 +48,17 @@ type AppConfig struct {
 
 var appConfig AppConfig
 var stocksCache []StockConfig
+
+func initFileLog() {
+	paths := []string{"/mnt/us/extensions/kkanpan/kkanpan.log", "kkanpan.log"}
+	for _, p := range paths {
+		if f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644); err == nil {
+			log.SetOutput(io.MultiWriter(os.Stdout, f))
+			log.Printf("Log file: %s", p)
+			return
+		}
+	}
+}
 
 func loadAppConfig() AppConfig {
 	paths := []string{"app.json", "/mnt/us/extensions/kkanpan/app.json", "/mnt/us/kkanpan/app.json"}
