@@ -16,6 +16,7 @@ fn data_changed(a: &[config::StockData], b: &[config::StockData]) -> bool {
             || (x.price - y.price).abs() > 1e-9
             || (x.change - y.change).abs() > 1e-9
             || (x.pct - y.pct).abs() > 1e-9
+            || x.prices.len() != y.prices.len()
     })
 }
 
@@ -30,10 +31,9 @@ fn arg_val(args: &[String], name: &str, def: &str) -> String {
         .unwrap_or_else(|| def.to_string())
 }
 
-fn pool_key(view: &str, style: &str) -> String {
-    // touch 开关显示在状态栏，进 key 保证电源键切换立即重绘；
-    // 拉取时间进 key，数据更新后旧缓存自动失效
-    format!("{view}|{style}|{}|{}", crate::input::touch_enabled(), crate::fetch::last_fetch_unix(view))
+fn page_cache_key(view: &str, style: &str, page: usize, ver: u64) -> String {
+    // 只与数据版本号绑定：后台空轮询（时间戳变、数据不变）不再使缓存失效，避免无效重绘与 pool 泄漏
+    format!("{view}|{style}|{}|{page}|{ver}", crate::input::touch_enabled())
 }
 
 fn main() {
@@ -99,12 +99,16 @@ fn main() {
     differ.update(&disp, &gray, width, height, true).unwrap();
     let mut last = data;
     let mut count = 0usize;
-    let mut pool: std::collections::HashMap<String, Vec<Vec<u8>>> = std::collections::HashMap::new();
-    pool.insert(
-        pool_key(&input::view(), &input::style_mode()),
-        render::render_all_pages(&last, width, height, &input::view()),
-    );
     let mut fast_count = 0usize;
+    let mut data_ver = 1u64;
+
+    // 懒加载分页缓存：只存单页，用户翻到哪页才渲染哪页
+    let mut pool: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
+    let cur = input::clamp_page(render::total_pages(&last, height, &input::view()).max(1));
+    pool.insert(
+        page_cache_key(&input::view(), &input::style_mode(), cur, data_ver),
+        gray,
+    );
 
     // 1 秒粒度轮询：既响应信号，又不打乱 interval 节拍
     let mut last_tick = std::time::Instant::now();
@@ -116,23 +120,26 @@ fn main() {
         match trigger.recv_timeout(std::time::Duration::from_secs(1)) {
             Ok(full) => {
                 // 切 Tab 时覆盖本地缺失的代码；切视图/风格走 GC16，同视图翻页走 DU，
-                // 每 10 次快刷全闪一次去鬼影
+                // 每 10 次快刷全闪一次去鬼影。
+                // 点按只读内存快照，绝不触发同步网络请求；网络只走后台 Timeout 分支
                 let view = input::view();
-                last = fetch::get_data(&view);
-                let key = pool_key(&view, &input::style_mode());
-                if !pool.contains_key(&key) {
-                    pool.insert(key.clone(), render::render_all_pages(&last, width, height, &view));
+                last = fetch::cached_snapshot(&view);
+                if last.is_empty() {
+                    last = fetch::get_data(&view); // 仅该 View 从未拉取过时 fallback
                 }
-                let pages = &pool[&key];
-                let total = pages.len().max(1);
+                let total = render::total_pages(&last, height, &view).max(1);
                 let cur = input::clamp_page(total);
+                let key = page_cache_key(&view, &input::style_mode(), cur, data_ver);
+                if !pool.contains_key(&key) {
+                    pool.insert(key.clone(), render::render_gray_page(&last, width, height, &view, cur));
+                }
                 let do_full = if full {
                     true
                 } else {
                     fast_count += 1;
                     fast_count % 10 == 0
                 };
-                differ.update(&disp, &pages[cur], width, height, do_full).unwrap();
+                differ.update(&disp, &pool[&key], width, height, do_full).unwrap();
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 if last_tick.elapsed() < std::time::Duration::from_secs(interval) {
@@ -143,13 +150,15 @@ fn main() {
                 let d = fetch::refresh_data(&input::view());
                 if data_changed(&last, &d) {
                     config::update_data_refresh_time();
-                    pool.clear(); // 数据变了，所有视图缓存失效
+                    data_ver += 1;
+                    pool.clear(); // 数据变了，所有视图的页面缓存统统失效
                     let view = input::view();
-                    let pages = render::render_all_pages(&d, width, height, &view);
-                    let total = pages.len().max(1);
+                    let total = render::total_pages(&d, height, &view).max(1);
                     let cur = input::clamp_page(total);
-                    differ.update(&disp, &pages[cur], width, height, count % 5 == 0).unwrap();
-                    pool.insert(pool_key(&view, &input::style_mode()), pages);
+                    // 后台更新也只渲染当前停留的一页，其余页等用户翻到再懒加载
+                    let gray = render::render_gray_page(&d, width, height, &view, cur);
+                    differ.update(&disp, &gray, width, height, count % 5 == 0).unwrap();
+                    pool.insert(page_cache_key(&view, &input::style_mode(), cur, data_ver), gray);
                 }
                 last = d;
             }

@@ -716,13 +716,6 @@ pub fn render_gray_page(
     gray
 }
 
-pub fn render_all_pages(data: &[StockData], width: i32, height: i32, view: &str) -> Vec<Vec<u8>> {
-    let total = total_pages(data, height, view).max(1);
-    (0..total)
-        .map(|p| render_gray_page(data, width, height, view, p))
-        .collect()
-}
-
 pub fn render_gray(data: &[StockData], width: i32, height: i32, view: &str) -> Vec<u8> {
     let total = total_pages(data, height, view).max(1);
     render_gray_page(data, width, height, view, crate::input::clamp_page(total))

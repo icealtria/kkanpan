@@ -223,31 +223,38 @@ pub fn refresh_data(view: &str) -> Vec<StockData> {
         .collect();
     let qt = fetch_qt(&tencent);
 
-    // std::thread::scope 并行，无额外依赖
+    // std::thread::scope 并行，无额外依赖；分块限流，Kindle 弱 CPU/RAM 扛不住 N 线程 + N 路 TLS
     let charts: HashMap<String, ChartResult> = std::thread::scope(|s| {
-        let handles: Vec<_> = configs
-            .iter()
-            .map(|c| {
-                s.spawn(|| {
-                    let mut r = ChartResult {
-                        prices: vec![],
-                        timestamps: vec![],
-                        reg_start: 0,
-                        reg_end: 0,
-                        chart_prev: 0.0,
-                        y_price: 0.0,
-                        y_prev: 0.0,
-                    };
-                    if c.source == "tencent" {
-                        r.prices = fetch_gtimg_minute(&c.code).unwrap_or_default();
-                    } else if c.source == "yahoo" {
-                        r = fetch_yahoo(&c.code);
-                    }
-                    (c.code.clone(), r)
+        let mut results = HashMap::new();
+        for chunk in configs.chunks(5) {
+            let handles: Vec<_> = chunk
+                .iter()
+                .map(|c| {
+                    s.spawn(|| {
+                        let mut r = ChartResult {
+                            prices: vec![],
+                            timestamps: vec![],
+                            reg_start: 0,
+                            reg_end: 0,
+                            chart_prev: 0.0,
+                            y_price: 0.0,
+                            y_prev: 0.0,
+                        };
+                        if c.source == "tencent" {
+                            r.prices = fetch_gtimg_minute(&c.code).unwrap_or_default();
+                        } else if c.source == "yahoo" {
+                            r = fetch_yahoo(&c.code);
+                        }
+                        (c.code.clone(), r)
+                    })
                 })
-            })
-            .collect();
-        handles.into_iter().map(|h| h.join().unwrap()).collect()
+                .collect();
+            for h in handles {
+                let (code, r) = h.join().unwrap();
+                results.insert(code, r);
+            }
+        }
+        results
     });
 
     let mut items = Vec::with_capacity(configs.len());
@@ -341,8 +348,4 @@ pub fn get_data(view: &str) -> Vec<StockData> {
 
 pub fn cached_snapshot(view: &str) -> Vec<StockData> {
     CACHED.read().unwrap().get(view).map(|vc| vc.data.clone()).unwrap_or_default()
-}
-
-pub fn last_fetch_unix(view: &str) -> i64 {
-    CACHED.read().unwrap().get(view).map(|vc| vc.at).unwrap_or(0)
 }
