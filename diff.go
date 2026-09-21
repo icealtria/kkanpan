@@ -2,15 +2,9 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"image"
-	"image/png"
 	"log"
-	"os"
-	"os/exec"
-	"strconv"
 	"sync"
-	"time"
 )
 
 type DirtyRect struct {
@@ -27,7 +21,6 @@ var screenDiffer = &ScreenDiffer{
 	blockSize: 8,
 }
 
-// FindDirtyRects 将新旧两帧按 blockSize 网格对比，返回所有脏块合并后的矩形列表
 func (sd *ScreenDiffer) FindDirtyRects(oldImg, newImg *image.Gray) []DirtyRect {
 	if oldImg == nil {
 		return []DirtyRect{{0, 0, newImg.Rect.Dx(), newImg.Rect.Dy()}}
@@ -147,14 +140,8 @@ func (sd *ScreenDiffer) UpdateScreen(newImg *image.Gray, fullRefresh bool) error
 	sd.mu.Lock()
 	defer sd.mu.Unlock()
 
-	eipsPath := "/usr/sbin/eips"
-	hasEips := false
-	if _, err := os.Stat(eipsPath); err == nil {
-		hasEips = true
-	}
-
 	if fullRefresh {
-		err := writeAndEips(newImg, eipsPath, hasEips, true)
+		err := writeGray(newImg, true)
 		sd.prevFrame = cloneGrayImage(newImg)
 		return err
 	}
@@ -174,92 +161,18 @@ func (sd *ScreenDiffer) UpdateScreen(newImg *image.Gray, fullRefresh bool) error
 
 	log.Printf("[diff] %d dirty regions, %.1f%% of screen changed", len(dirtyRects), ratio*100)
 
-	// >60% 或 >5 rects 时全屏更快: 每次 eips 都是 fork+系统调用, 5次局部开销 > 1次全刷
 	if ratio > 0.60 || len(dirtyRects) > 5 {
 		log.Printf("[diff] Too many changes (%.0f%%, %d rects), falling back to full update", ratio*100, len(dirtyRects))
-		err := writeAndEips(newImg, eipsPath, hasEips, false)
+		err := writeGray(newImg, false)
 		sd.prevFrame = cloneGrayImage(newImg)
 		return err
 	}
 
-	if hasEips {
-		for i, r := range dirtyRects {
-			if err := eipsPartialUpdate(newImg, eipsPath, r, i); err != nil {
-				log.Printf("[diff] Partial update failed for rect %d, falling back: %v", i, err)
-				_ = writeAndEips(newImg, eipsPath, hasEips, false)
-				break
-			}
-		}
-	} else {
-		_ = writeAndEips(newImg, eipsPath, hasEips, false)
+	if err := writeGrayPartial(newImg, dirtyRects); err != nil {
+		return err
 	}
 
 	sd.prevFrame = cloneGrayImage(newImg)
-	return nil
-}
-
-func writeAndEips(img *image.Gray, eipsPath string, hasEips, full bool) error {
-	tmpPath := "/tmp/kkanpan.png"
-	// NoCompression: eips 只要能读 PNG 即可, tmpfs 内存盘 IO 毫秒级, 省下 PNG 压缩的 CPU 计算
-	f, err := os.Create(tmpPath)
-	if err != nil {
-		return err
-	}
-	enc := &png.Encoder{CompressionLevel: png.NoCompression}
-	if err := enc.Encode(f, img); err != nil {
-		f.Close()
-		return err
-	}
-	f.Close()
-
-	if hasEips {
-		if full {
-			_ = exec.Command(eipsPath, "-c").Run()
-			time.Sleep(200 * time.Millisecond)
-			cmd := exec.Command(eipsPath, "-f", "-g", tmpPath)
-			if out, err := cmd.CombinedOutput(); err != nil {
-				log.Printf("eips -f -g err: %v, output: %s, retrying -g", err, string(out))
-				_ = exec.Command(eipsPath, "-g", tmpPath).Run()
-			}
-		} else {
-			cmd := exec.Command(eipsPath, "-g", tmpPath)
-			if out, err := cmd.CombinedOutput(); err != nil {
-				log.Printf("eips -g err: %v, output: %s", err, string(out))
-			}
-		}
-		log.Println("Kindle eips refreshed successfully")
-	} else {
-		log.Printf("Screen image rendered to %s (not on Kindle device)", tmpPath)
-	}
-	return nil
-}
-
-func eipsPartialUpdate(img *image.Gray, eipsPath string, r DirtyRect, idx int) error {
-	cropped := image.NewGray(image.Rect(0, 0, r.W, r.H))
-	for y := 0; y < r.H; y++ {
-		srcOff := (r.Y+y)*img.Stride + r.X
-		dstOff := y * cropped.Stride
-		copy(cropped.Pix[dstOff:dstOff+r.W], img.Pix[srcOff:srcOff+r.W])
-	}
-
-	tmpPath := fmt.Sprintf("/tmp/kkanpan_patch_%d.png", idx)
-	f, err := os.Create(tmpPath)
-	if err != nil {
-		return err
-	}
-	enc := &png.Encoder{CompressionLevel: png.NoCompression}
-	if err := enc.Encode(f, cropped); err != nil {
-		f.Close()
-		return err
-	}
-	f.Close()
-
-	cmd := exec.Command(eipsPath, "-g", tmpPath,
-		"-x", strconv.Itoa(r.X),
-		"-y", strconv.Itoa(r.Y))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("eips partial: %v (output: %s)", err, string(out))
-	}
 	return nil
 }
 

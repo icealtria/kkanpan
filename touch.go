@@ -143,12 +143,8 @@ func quitApp() {
 	}
 	RestoreFrontlight()
 	EnableCoexistMode()
-	// 唤醒 Kindle 原生主页并清屏重绘
 	_ = exec.Command("lipc-set-prop", "com.lab126.appmgrd", "show", "app://com.lab126.booklet.home").Run()
-	eipsPath := "/usr/sbin/eips"
-	if _, err := os.Stat(eipsPath); err == nil {
-		_ = exec.Command(eipsPath, "-c").Run()
-	}
+	_ = clearScreen()
 	time.Sleep(300 * time.Millisecond)
 	os.Exit(0)
 }

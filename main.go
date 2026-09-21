@@ -28,7 +28,6 @@ func main() {
 	interval := flag.Int("interval", 60, "refresh interval (seconds)")
 	width := flag.Int("width", 1072, "screen width (KPW3)")
 	height := flag.Int("height", 1448, "screen height (KPW3)")
-	eips := flag.Bool("eips", true, "enable eips direct e-ink refresh (default on)")
 	once := flag.Bool("once", false, "single refresh and exit (for deep sleep script)")
 	web := flag.Bool("http", false, "enable HTTP server (off by default)")
 	initialView := flag.String("view", "", "initial view mode (AUTO, ALL or group from stocks.json, default from app.json)")
@@ -44,13 +43,17 @@ func main() {
 	SetViewMode(view)
 	log.Printf("Starting kkanpan for Kindle KPW3 (ViewMode: %s)...", view)
 
-	// 共存模式: 不杀 framework, 通过 pillow+awesome+wmctrl+statusbar 屏蔽状态栏 (KOReader 同款, 退出不重启)
 	DisableCoexistMode()
 	if appConfig.DimFrontlight {
 		SaveAndTurnOffFrontlight()
 	}
 	defer EnableCoexistMode()
 	defer RestoreFrontlight()
+
+	if err := initDisplay(); err != nil {
+		log.Fatalf("Display init failed: %v", err)
+	}
+	defer closeDisplay()
 
 	data := refreshData()
 	UpdateDataRefreshTime()
@@ -70,39 +73,35 @@ func main() {
 	go startTouchListener(*width, *height)
 	go startPowerButtonListener()
 
-	if *eips {
-		refreshCount := 0
-		ticker := time.NewTicker(time.Duration(*interval) * time.Second)
-		defer ticker.Stop()
+	refreshCount := 0
+	ticker := time.NewTicker(time.Duration(*interval) * time.Second)
+	defer ticker.Stop()
 
-		img := renderScreenImage(data, *width, *height)
-		_ = screenDiffer.UpdateScreen(img, true)
-		lastData := data
+	img := renderScreenImage(data, *width, *height)
+	_ = screenDiffer.UpdateScreen(img, true)
+	lastData := data
 
-		for {
-			select {
-			case <-ticker.C:
-				refreshCount++
-				d := refreshData()
+	for {
+		select {
+		case <-ticker.C:
+			refreshCount++
+			d := refreshData()
 
-				if dataChanged(lastData, d) {
-					UpdateDataRefreshTime()
-					img := renderScreenImage(d, *width, *height)
-					full := (refreshCount % 5) == 0
-					if err := screenDiffer.UpdateScreen(img, full); err != nil {
-						log.Printf("Screen update error: %v", err)
-					}
-				}
-				lastData = d
-			case <-triggerRefreshCh:
-				log.Println("Instant refresh triggered by user interaction...")
-				screenDiffer.ClearDiffCache()
-				d := getData()
+			if dataChanged(lastData, d) {
+				UpdateDataRefreshTime()
 				img := renderScreenImage(d, *width, *height)
-				_ = screenDiffer.UpdateScreen(img, false)
+				full := (refreshCount % 5) == 0
+				if err := screenDiffer.UpdateScreen(img, full); err != nil {
+					log.Printf("Screen update error: %v", err)
+				}
 			}
+			lastData = d
+		case <-triggerRefreshCh:
+			log.Println("Instant refresh triggered by user interaction...")
+			screenDiffer.ClearDiffCache()
+			d := getData()
+			img := renderScreenImage(d, *width, *height)
+			_ = screenDiffer.UpdateScreen(img, false)
 		}
-	} else {
-		select {}
 	}
 }

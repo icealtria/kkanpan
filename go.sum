@@ -1,3 +1,5 @@
+github.com/shermp/go-fbink-v2/v2 v2.21.0 h1:S2Q8B5zLGo7xTGILpqkVNZB94YwkehvTmECIYkxKH04=
+github.com/shermp/go-fbink-v2/v2 v2.21.0/go.mod h1:QPZ+LtEGpr7FkAwfS1AuCHXUrTJWg57PKRl4SmnzKak=
 golang.org/x/image v0.45.0 h1:FMb1nTbH5H9vF55SriQHgFw5GnNL9Jg6L25BwXKzhB0=
 golang.org/x/image v0.45.0/go.mod h1:n62x/7RqlwXDvGsSU4u6IUTUf6KghUZ9Bt7cG/T9Fx4=
 golang.org/x/sys v0.47.0 h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=
