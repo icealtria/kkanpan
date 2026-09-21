@@ -1,5 +1,4 @@
-// FBInk 显示层：手写 FFI（字段顺序/类型逐项对齐 fbink/fbink.h，
-// 不用 bindgen，省掉 libclang 交叉编译），+ 脏矩形差分（对齐 diff.go）。
+// 手写 FFI，不用 bindgen（省掉 libclang 交叉编译）
 #[cfg(target_os = "linux")]
 use std::os::raw::{c_char, c_int};
 
@@ -102,7 +101,7 @@ impl Display {
         }
     }
 
-    // data: Y 灰度行优先无 padding（Kindle 上 ignore_alpha 最快，对齐 fbink.h 注释）
+    // Kindle 上 Y 灰度 + ignore_alpha 最快
     pub fn write_gray(&self, data: &[u8], w: i32, h: i32, full: bool) -> Result<(), String> {
         self.write_gray_mode(data, w, h, if full { WFM_GC16 } else { WFM_DU }, full)
     }
@@ -175,7 +174,6 @@ impl Drop for Display {
     }
 }
 
-// ---- 脏矩形差分（对齐 diff.go：8px 分块 + 行段合并） ----
 
 #[derive(Debug, Clone, Copy)]
 pub struct DirtyRect {
@@ -223,8 +221,7 @@ impl ScreenDiffer {
         if !any {
             return vec![];
         }
-        // 行段纵向合并
-        let mut spans: Vec<(i32, i32, i32)> = vec![]; // (bx0, bx1, by)
+        let mut spans: Vec<(i32, i32, i32)> = vec![];
         for by in 0..rows {
             let mut bx = 0;
             while bx < cols {

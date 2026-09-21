@@ -1,4 +1,3 @@
-// 调试 HTTP 服务（对齐 server.go；tiny_http 同步单线程，无 tokio，无 TLS）。
 pub struct Ctx {
     pub width: i32,
     pub height: i32,

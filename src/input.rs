@@ -1,4 +1,3 @@
-// 视图/风格状态 + 触屏/电源键监听（对齐 touch.go）。
 use std::sync::{Mutex, OnceLock, RwLock};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
@@ -26,7 +25,6 @@ pub fn trigger_refresh() {
     }
 }
 
-// 同视图内翻页专用：DU 快刷，不闪屏
 pub fn trigger_page_turn() {
     if let Some(tx) = TRIGGER.get() {
         let _ = tx.try_send(false);
@@ -115,7 +113,6 @@ pub fn quit_app() -> ! {
     std::process::exit(0);
 }
 
-// ---- 输入设备（仅 Linux；EVIOCGRAB 独占触屏，对齐 touch.go） ----
 
 #[cfg(target_os = "linux")]
 fn find_input(devs: &[&str]) -> Option<String> {
@@ -154,7 +151,6 @@ pub fn start_power_listener() {
                 continue;
             };
             if ty == 0x01 && code == 116 && val == 1 {
-                // KEY_POWER：切换触控开关
                 TOUCH_ON.store(!TOUCH_ON.load(Ordering::Relaxed), Ordering::Relaxed);
                 eprintln!("[Touch] enabled={}", TOUCH_ON.load(Ordering::Relaxed));
                 trigger_refresh();
@@ -164,9 +160,7 @@ pub fn start_power_listener() {
 }
 
 fn handle_tap(x: i32, y: i32, sw: i32, sh: i32) {
-    // 右上按钮区
-    if y <= 65 {
-        if x >= sw - 95 && x <= sw - 10 {
+    if y <= 65 {        if x >= sw - 95 && x <= sw - 10 {
             quit_app();
         }
         if x >= sw - 185 && x <= sw - 105 {
@@ -174,7 +168,6 @@ fn handle_tap(x: i32, y: i32, sw: i32, sh: i32) {
             return;
         }
     }
-    // Tab 栏
     if (60..=135).contains(&y) {
         let modes = crate::config::tab_modes();
         let tab_w = (sw - 60) / modes.len().max(1) as i32;
@@ -185,7 +178,6 @@ fn handle_tap(x: i32, y: i32, sw: i32, sh: i32) {
         }
         return;
     }
-    // 底部：左1/3 上一页，右1/3 下一页/刷新，中间刷新
     if y >= sh - 100 {
         if x < sw / 3 {
             if prev_page() {
@@ -195,7 +187,6 @@ fn handle_tap(x: i32, y: i32, sw: i32, sh: i32) {
         }
         if x > sw * 2 / 3 {
             let total = crate::render::total_pages(&crate::fetch::cached_snapshot(&view()), sh, &view()).max(1);
-            // 只有一页时点翻页区：什么都不做（之前会整屏闪一次，纯打扰）
             if total > 1 && next_page(total) {
                 trigger_page_turn();
             }

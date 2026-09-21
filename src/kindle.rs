@@ -1,4 +1,3 @@
-// Kindle 系统信息/背光/共存模式（对齐 sysinfo.go；全部经 shell/Command 直调，无依赖）。
 use std::sync::{Mutex, OnceLock};
 
 #[derive(Clone, Default)]
@@ -58,8 +57,6 @@ pub fn format_status_bar() -> String {
     s
 }
 
-// ---- 背光 ----
-
 const FRONTLIGHT: &str = "/sys/class/backlight/max77696-bl/brightness";
 static SAVED_BL: OnceLock<String> = OnceLock::new();
 
@@ -79,7 +76,6 @@ pub fn restore_frontlight() {
     }
 }
 
-// ---- 共存模式（对齐 KOReader 逻辑，不杀 framework） ----
 
 fn run(prog: &str, args: &[&str]) -> bool {
     std::process::Command::new(prog).args(args).output().map(|o| o.status.success()).unwrap_or(false)

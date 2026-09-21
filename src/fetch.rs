@@ -2,7 +2,6 @@ use crate::config::{self, StockConfig, StockData};
 use std::collections::HashMap;
 use std::sync::{Mutex, RwLock};
 
-// ---- 缓存（对齐 fetch.go） ----
 
 static CACHED: std::sync::LazyLock<RwLock<HashMap<String, ViewCache>>> =
     std::sync::LazyLock::new(|| RwLock::new(HashMap::new()));
@@ -21,7 +20,6 @@ fn now_unix() -> i64 {
         .unwrap_or(0)
 }
 
-// ---- HTTP：ureq Agent（连接复用 + 超时 + 代理；校验证书，比 Go 版 -k 更严） ----
 static AGENT: std::sync::OnceLock<ureq::Agent> = std::sync::OnceLock::new();
 
 fn agent() -> &'static ureq::Agent {
@@ -46,7 +44,6 @@ fn http_get(url: &str, referer: &str) -> Option<Vec<u8>> {
     req.call().ok()?.body_mut().read_to_vec().ok()
 }
 
-// ---- 抓取 ----
 
 fn needed_stocks(view: &str) -> Vec<StockConfig> {
     let all = config::stocks();
@@ -70,7 +67,6 @@ fn needed_stocks(view: &str) -> Vec<StockConfig> {
         .collect()
 }
 
-// 腾讯批量行情：v_code="..."，~ 或 , 分隔
 fn fetch_qt(codes: &[String]) -> HashMap<String, Vec<String>> {
     let mut out = HashMap::new();
     if codes.is_empty() {
@@ -162,7 +158,6 @@ fn fetch_yahoo(code: &str) -> ChartResult {
     r
 }
 
-// 腾讯分时："HH:MM 价格 成交量"
 fn parse_gtimg_rows(rows: &[&str]) -> Option<Vec<f64>> {
     let mut prices = Vec::with_capacity(rows.len());
     for row in rows {
@@ -228,7 +223,7 @@ pub fn refresh_data(view: &str) -> Vec<StockData> {
         .collect();
     let qt = fetch_qt(&tencent);
 
-    // 分时并行（std::thread::scope，无额外依赖）
+    // std::thread::scope 并行，无额外依赖
     let charts: HashMap<String, ChartResult> = std::thread::scope(|s| {
         let handles: Vec<_> = configs
             .iter()

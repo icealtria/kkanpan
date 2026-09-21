@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::sync::{OnceLock, RwLock};
 
-// ---- 数据类型（对齐 config.go） ----
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct StockConfig {
@@ -59,7 +58,6 @@ fn default_ttl() -> i64 {
     55
 }
 
-// ---- 全局配置 ----
 
 static APP: OnceLock<AppConfig> = OnceLock::new();
 static STOCKS: OnceLock<Vec<StockConfig>> = OnceLock::new();
@@ -121,7 +119,6 @@ pub fn trading_minutes(code: &str) -> usize {
     }
 }
 
-// 实际点数超过横轴时以实际为准
 pub fn chart_total(code: &str, n: usize) -> usize {
     let t = trading_minutes(code);
     if t >= n { t } else { n }
@@ -157,10 +154,10 @@ pub fn default_view() -> String {
     all_groups().into_iter().next().unwrap_or("ALL".to_string())
 }
 
-// ---- AUTO 规则（对齐 touch.go；不用 chrono，CST 直接 +8h 算） ----
+// 不用 chrono，CST 直接 +8h 算
 
 fn cst_now() -> (i32, i32) {
-    // (weekday 0=Sun, minutes since midnight) in Asia/Shanghai
+    // weekday 0=Sun, minutes since midnight, Asia/Shanghai
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
@@ -218,12 +215,10 @@ pub fn matching_auto_groups() -> Vec<String> {
     out
 }
 
-// ---- 数据刷新时间（对齐 sysinfo.go） ----
 
 static REFRESH_TIME: RwLock<String> = RwLock::new(String::new());
 
 pub fn update_data_refresh_time() {
-    // CST HH:MM
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)

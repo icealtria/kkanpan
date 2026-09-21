@@ -3,7 +3,7 @@ use minijinja::Environment;
 use serde::Serialize;
 use std::sync::OnceLock;
 
-// ---- 版式常量（对齐 layout.go，单位=屏像素；字号 pt→px 按 300DPI 换算） ----
+// 单位=屏像素；字号 pt→px 按 300DPI 换算
 const MARGIN_X: i32 = 30;
 const CONTENT_TOP: i32 = 142;
 const BOTTOM_RESERVE: i32 = 70;
@@ -21,19 +21,20 @@ fn px(pt: i32) -> i32 {
     pt * 300 / 72
 }
 
-// ---- 分页（对齐 pagination.go） ----
-
 enum Block {
     Header { group: String },
     Card(StockData),
 }
 
 fn card_h(style: &str) -> i32 {
-    if style == "large" { LARGE_CARD_H } else { NORMAL_CARD_H }
+    if style == "large" {
+        LARGE_CARD_H
+    } else {
+        NORMAL_CARD_H
+    }
 }
 
 fn build_blocks(data: &[StockData], eff: &str, is_auto: bool) -> Vec<(String, Vec<StockData>)> {
-    // (group, items) 有序分组
     let mut groups: Vec<(String, Vec<StockData>)> = vec![];
     for d in data {
         match groups.iter_mut().find(|(g, _)| g == &d.group) {
@@ -43,10 +44,16 @@ fn build_blocks(data: &[StockData], eff: &str, is_auto: bool) -> Vec<(String, Ve
     }
     let pick = |name: &str| groups.iter().find(|(g, _)| g == name).cloned();
     if eff == "ALL" {
-        return config::all_groups().into_iter().filter_map(|g| pick(&g)).collect();
+        return config::all_groups()
+            .into_iter()
+            .filter_map(|g| pick(&g))
+            .collect();
     }
     if is_auto {
-        return config::matching_auto_groups().into_iter().filter_map(|g| pick(&g)).collect();
+        return config::matching_auto_groups()
+            .into_iter()
+            .filter_map(|g| pick(&g))
+            .collect();
     }
     pick(eff).into_iter().collect()
 }
@@ -95,8 +102,6 @@ pub fn total_pages(data: &[StockData], height: i32, view: &str) -> usize {
     paginate(data, height, view).len()
 }
 
-// ---- 模板上下文 ----
-
 #[derive(Serialize)]
 struct Tab<'a> {
     key: &'a str,
@@ -111,16 +116,14 @@ struct Tab<'a> {
 struct CtxBlock {
     is_header: bool,
     group: String,
-    // header
     bar_y: i32,
-    // card
     card_y: i32,
     card_h: i32,
     name_l1: String,
     name_l2: String,
     code: String,
-    spark: String,       // polyline points，空=不画
-    ref_y: Option<i32>,  // 昨收虚线 y，None=不画
+    spark: String,      // polyline points，空=不画
+    ref_y: Option<i32>, // 昨收虚线 y，None=不画
     spark_x: i32,
     spark_y: i32,
     spark_w: i32,
@@ -161,11 +164,24 @@ struct Screen<'a> {
 }
 
 fn stock_strings(price: f64, change: f64, pct: f64) -> (String, String) {
-    let price_str = if price > 0.0 { format!("{price:.2}") } else { "--".to_string() };
-    let arrow = if change > 0.0 { "▲" } else if change < 0.0 { "▼" } else { " " };
+    let price_str = if price > 0.0 {
+        format!("{price:.2}")
+    } else {
+        "--".to_string()
+    };
+    let arrow = if change > 0.0 {
+        "▲"
+    } else if change < 0.0 {
+        "▼"
+    } else {
+        " "
+    };
     let sign_c = if change >= 0.0 { "+" } else { "" };
     let sign_p = if pct >= 0.0 { "+" } else { "" };
-    (price_str, format!("{arrow} {sign_c}{change:.2} ({sign_p}{pct:.2}%)"))
+    (
+        price_str,
+        format!("{arrow} {sign_c}{change:.2} ({sign_p}{pct:.2}%)"),
+    )
 }
 
 fn sparkline_range(prices: &[f64]) -> (f64, f64) {
@@ -177,10 +193,14 @@ fn sparkline_range(prices: &[f64]) -> (f64, f64) {
         mn = mn.min(p);
         mx = mx.max(p);
     }
-    if mx == mn { (mn, mn + 1.0) } else { (mn, mx) }
+    if mx == mn {
+        (mn, mn + 1.0)
+    } else {
+        (mn, mx)
+    }
 }
 
-// 用展示字库的真实 advance 量文本宽度（字符数启发式对数字/拉丁误差近一倍）
+// advance 求和：字符数启发式对数字/拉丁误差近一倍
 fn char_widths(text: &str, font_px: i32) -> Vec<i32> {
     let fallback = vec![font_px / 2; text.chars().count()];
     let fs = fontset();
@@ -193,7 +213,7 @@ fn char_widths(text: &str, font_px: i32) -> Vec<i32> {
         Some(id) => id,
         None => return fallback,
     };
-        fs.db
+    fs.db
         .with_face_data(id, |data, idx| {
             use skrifa::MetadataProvider;
             let font = skrifa::FontRef::from_index(data, idx).ok()?;
@@ -240,14 +260,25 @@ fn split_name(name: &str, font_px: i32, max_w: i32) -> (String, String) {
     (chars[..cut].iter().collect(), chars[cut..].iter().collect())
 }
 
-fn spark_points(item: &StockData, large: bool, sx: i32, sy: i32, sw: i32, sh: i32) -> (String, Option<i32>) {
+fn spark_points(
+    item: &StockData,
+    large: bool,
+    sx: i32,
+    sy: i32,
+    sw: i32,
+    sh: i32,
+) -> (String, Option<i32>) {
     let prices = &item.prices;
     if prices.len() < 2 {
         return (String::new(), None);
     }
     let (mut mn, mut mx) = sparkline_range(prices);
     let is_yahoo = item.timestamps.len() == prices.len() && item.regular_end > item.regular_start;
-    let mut reference = if is_yahoo { item.chart_prev_close } else { item.prev };
+    let mut reference = if is_yahoo {
+        item.chart_prev_close
+    } else {
+        item.prev
+    };
     if reference == 0.0 {
         reference = (mn + mx) / 2.0;
     }
@@ -270,7 +301,9 @@ fn spark_points(item: &StockData, large: bool, sx: i32, sy: i32, sw: i32, sh: i3
     for (i, &p) in prices.iter().enumerate() {
         let x = if is_yahoo && item.timestamps.len() == prices.len() {
             let total = (item.regular_end - item.regular_start).max(1) as f64;
-            sx + 2 + ((item.timestamps[i] - item.regular_start) as f64 * (sw - 4) as f64 / total) as i32
+            sx + 2
+                + ((item.timestamps[i] - item.regular_start) as f64 * (sw - 4) as f64 / total)
+                    as i32
         } else {
             let total = config::chart_total(&item.code, prices.len()).max(1) as f64;
             sx + 2 + (i as f64 * (sw - 4) as f64 / total) as i32
@@ -284,14 +317,13 @@ fn spark_points(item: &StockData, large: bool, sx: i32, sy: i32, sw: i32, sh: i3
     (pts, ref_y)
 }
 
-// ---- 渲染 ----
-
 static TPL: OnceLock<Environment<'static>> = OnceLock::new();
 
 fn env() -> &'static Environment<'static> {
     TPL.get_or_init(|| {
         let mut e = Environment::new();
-        e.add_template("screen", include_str!("../templates/screen.svg")).unwrap();
+        e.add_template("screen", include_str!("../templates/screen.svg"))
+            .unwrap();
         e
     })
 }
@@ -300,7 +332,11 @@ pub fn render_svg(data: &[StockData], width: i32, height: i32, view: &str, page:
     let style = crate::input::style_mode();
     let large = style == "large";
     let (eff, is_auto) = config::effective_group(view);
-    let mode_tag = if is_auto { format!("[AUTO: {eff}]") } else { format!("[{view}]") };
+    let mode_tag = if is_auto {
+        format!("[AUTO: {eff}]")
+    } else {
+        format!("[{view}]")
+    };
 
     let modes = config::tab_modes();
     let n = modes.len().max(1) as i32;
@@ -323,12 +359,53 @@ pub fn render_svg(data: &[StockData], width: i32, height: i32, view: &str, page:
     let total = pages.len();
     let cur = page.min(total.saturating_sub(1));
 
-    let (name_dy, name_px, code_dy, code_px, sp_x, sp_dy, sp_w, sp_h, pr_dy, pr_px, ch_dy, ch_px, chh) =
-        if large {
-            (18, px(8), 62, px(5), 210, 15, width - 490, LARGE_CARD_H - 30, 16, px(9), 64, px(6), LARGE_CARD_H)
-        } else {
-            (14, px(6), 48, px(4), 240, 20, 480, 63, 14, px(8), 52, px(5), NORMAL_CARD_H)
-        };
+    let (
+        name_dy,
+        name_px,
+        code_dy,
+        code_px,
+        sp_x,
+        sp_dy,
+        sp_w,
+        sp_h,
+        pr_dy,
+        pr_px,
+        ch_dy,
+        ch_px,
+        chh,
+    ) = if large {
+        (
+            18,
+            px(8),
+            62,
+            px(5),
+            210,
+            15,
+            width - 490,
+            LARGE_CARD_H - 30,
+            16,
+            px(9),
+            64,
+            px(6),
+            LARGE_CARD_H,
+        )
+    } else {
+        (
+            14,
+            px(6),
+            48,
+            px(4),
+            240,
+            20,
+            480,
+            63,
+            14,
+            px(8),
+            52,
+            px(5),
+            NORMAL_CARD_H,
+        )
+    };
 
     let mut y = CONTENT_TOP;
     let mut blocks = vec![];
@@ -365,11 +442,18 @@ pub fn render_svg(data: &[StockData], width: i32, height: i32, view: &str, page:
                 y += HEADER_H;
             }
             Block::Card(item) => {
-                let name = if item.name.is_empty() { item.code.clone() } else { item.name.clone() };
+                let name = if item.name.is_empty() {
+                    item.code.clone()
+                } else {
+                    item.name.clone()
+                };
                 let max_w = sp_x - (MARGIN_X + 15) - 5;
                 let (l1, l2) = split_name(&name, name_px, max_w);
-                // 两行时 code 顶到第二行下面：name 基线 + 一行 + 行隙（对齐 Go 版 codeY 公式）
-                let code_y = if l2.is_empty() { y + code_dy } else { y + name_dy + 2 * name_px + name_px / 3 };
+                let code_y = if l2.is_empty() {
+                    y + code_dy
+                } else {
+                    y + name_dy + 2 * name_px + name_px / 3
+                };
                 let (pts, ref_y) = spark_points(item, large, sp_x, y + sp_dy, sp_w, sp_h);
                 let (price_s, chg_s) = stock_strings(item.price, item.change, item.pct);
                 blocks.push(CtxBlock {
@@ -439,8 +523,6 @@ pub fn render_svg(data: &[StockData], width: i32, height: i32, view: &str, page:
     env().get_template("screen").unwrap().render(&ctx).unwrap()
 }
 
-// ---- 光栅化：SVG → 灰度（FBInk 要 Y 灰度，Kindle 上 ignore_alpha 更快） ----
-
 static FONTDB: OnceLock<FontSet> = OnceLock::new();
 
 struct FontSet {
@@ -451,7 +533,10 @@ struct FontSet {
 
 fn is_font_file(p: &std::path::Path) -> bool {
     matches!(
-        p.extension().and_then(|x| x.to_str()).map(|s| s.to_lowercase()).as_deref(),
+        p.extension()
+            .and_then(|x| x.to_str())
+            .map(|s| s.to_lowercase())
+            .as_deref(),
         Some("ttf" | "otf" | "ttc")
     )
 }
@@ -471,19 +556,28 @@ fn scan_fonts(db: &mut resvg::usvg::fontdb::Database, dir: &str, depth: usize, t
             continue;
         }
         // 跳过 macOS 传过来的 AppleDouble 垃圾（._*.ttf 不是字库）
-        if p.file_name().and_then(|n| n.to_str()).map(|n| n.starts_with("._") || n.starts_with('.')).unwrap_or(true) {
+        if p.file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n.starts_with("._") || n.starts_with('.'))
+            .unwrap_or(true)
+        {
             continue;
         }
         if !is_font_file(&p) {
             continue;
         }
         if to_memory {
-            // 用户字库一次性读进 RAM：usvg 给每个 <text> shaping 都要取字库数据，
             // A9 上反复 mmap/读文件是 parse 慢的主因之一
             match std::fs::read(&p) {
                 Ok(data) => {
-                    crate::dlog!("[font] memory-loaded {} ({}KB)", p.display(), data.len() / 1024);
-                    db.load_font_source(resvg::usvg::fontdb::Source::Binary(std::sync::Arc::new(data)));
+                    crate::dlog!(
+                        "[font] memory-loaded {} ({}KB)",
+                        p.display(),
+                        data.len() / 1024
+                    );
+                    db.load_font_source(resvg::usvg::fontdb::Source::Binary(std::sync::Arc::new(
+                        data,
+                    )));
                 }
                 Err(_) => {
                     db.load_font_file(&p).ok();
@@ -496,46 +590,64 @@ fn scan_fonts(db: &mut resvg::usvg::fontdb::Database, dir: &str, depth: usize, t
 }
 
 fn fontset() -> &'static FontSet {
-    FONTDB
-        .get_or_init(|| {
-            let mut db = resvg::usvg::fontdb::Database::new();
-            // 插件自带优先
-            for p in ["/mnt/us/extensions/kkanpan/font.ttf", "/mnt/us/extensions/kkanpan/font.otf", "font.ttf", "font.otf"] {
-                if std::path::Path::new(p).exists() {
-                    db.load_font_file(p).ok();
-                }
+    FONTDB.get_or_init(|| {
+        let mut db = resvg::usvg::fontdb::Database::new();
+        for p in [
+            "/mnt/us/extensions/kkanpan/font.ttf",
+            "/mnt/us/extensions/kkanpan/font.otf",
+            "font.ttf",
+            "font.otf",
+        ] {
+            if std::path::Path::new(p).exists() {
+                db.load_font_file(p).ok();
             }
-            // 递归扫：固件/用户字库可能随版本搬家，按目录扫比枚举文件名可靠
-            // 用户字库进 RAM，固件字库走文件（量大，STHeiti 等 Apple 字库表结构紧凑，取数快）
-            scan_fonts(&mut db, "/mnt/us/fonts", 0, true);
-            for d in ["/usr/java/lib/fonts", "/usr/share/fonts", "/opt"] {
-                scan_fonts(&mut db, d, 0, false);
-            }
-            db.load_system_fonts();
-            eprintln!("[font] {} faces total", db.len());
-            // 选 family：固件 STHeiti/STSong 又小又快（文泉驿十几 MB，A9 上 shaping 慢），
-            // 缺字时 usvg 会按字符 fallback 到其它已加载字库，不会变豆腐块
-            let faces: Vec<_> = db.faces().collect();
-            let fam_of = |f: &&resvg::usvg::fontdb::FaceInfo| {
-                f.families.first().map(|(s, _)| s.clone()).unwrap_or_default()
-            };
-            let exact = ["STHeitiMedium", "STSongMedium", "STHeiti", "STSong"];
-            let face = exact.iter().find_map(|w| faces.iter().find(|f| &fam_of(f) == w));
-            let pick = |keys: &[&str]| {
-                faces.iter().find(|f| {
-                    let n = f.families.first().map(|(s, _)| s.to_lowercase()).unwrap_or_default();
-                    keys.iter().any(|k| n.contains(k))
-                })
-            };
-            let face = face
-                .or_else(|| pick(&["stheiti", "stsong", "song", "kai", "hei", "noto", "droid", "wenquan", "uming", "ukai", "cjk", "pingfang", "han"]))
-                .or_else(|| faces.first());
-            let family = face
-                .and_then(|f| f.families.first().map(|(s, _)| s.clone()))
-                .unwrap_or_else(|| "sans-serif".to_string());
-            eprintln!("[font] using family: {family}");
-            FontSet { db: std::sync::Arc::new(db), family }
-        })
+        }
+        scan_fonts(&mut db, "/mnt/us/fonts", 0, true);
+        for d in ["/usr/java/lib/fonts", "/usr/share/fonts", "/opt"] {
+            scan_fonts(&mut db, d, 0, false);
+        }
+        db.load_system_fonts();
+        eprintln!("[font] {} faces total", db.len());
+        // 选 family：固件 STHeiti/STSong 又小又快（文泉驿十几 MB，A9 上 shaping 慢），
+        // 缺字时 usvg 会按字符 fallback 到其它已加载字库，不会变豆腐块
+        let faces: Vec<_> = db.faces().collect();
+        let fam_of = |f: &&resvg::usvg::fontdb::FaceInfo| {
+            f.families
+                .first()
+                .map(|(s, _)| s.clone())
+                .unwrap_or_default()
+        };
+        let exact = ["STHeitiMedium", "STSongMedium", "STHeiti", "STSong"];
+        let face = exact
+            .iter()
+            .find_map(|w| faces.iter().find(|f| &fam_of(f) == w));
+        let pick = |keys: &[&str]| {
+            faces.iter().find(|f| {
+                let n = f
+                    .families
+                    .first()
+                    .map(|(s, _)| s.to_lowercase())
+                    .unwrap_or_default();
+                keys.iter().any(|k| n.contains(k))
+            })
+        };
+        let face = face
+            .or_else(|| {
+                pick(&[
+                    "stheiti", "stsong", "song", "kai", "hei", "noto", "droid", "wenquan", "uming",
+                    "ukai", "cjk", "pingfang", "han",
+                ])
+            })
+            .or_else(|| faces.first());
+        let family = face
+            .and_then(|f| f.families.first().map(|(s, _)| s.clone()))
+            .unwrap_or_else(|| "sans-serif".to_string());
+        eprintln!("[font] using family: {family}");
+        FontSet {
+            db: std::sync::Arc::new(db),
+            family,
+        }
+    })
 }
 
 pub fn render_pixmap(svg: &str) -> resvg::tiny_skia::Pixmap {
@@ -546,7 +658,11 @@ pub fn render_pixmap(svg: &str) -> resvg::tiny_skia::Pixmap {
     let size = tree.size();
     let (w, h) = (size.width() as u32, size.height() as u32);
     let mut pix = resvg::tiny_skia::Pixmap::new(w, h).expect("pixmap");
-    resvg::render(&tree, resvg::tiny_skia::Transform::identity(), &mut pix.as_mut());
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::identity(),
+        &mut pix.as_mut(),
+    );
     pix
 }
 
@@ -565,7 +681,13 @@ pub fn pixmap_to_gray(pix: &resvg::tiny_skia::Pixmap) -> Vec<u8> {
         .collect()
 }
 
-pub fn render_gray_page(data: &[StockData], width: i32, height: i32, view: &str, page: usize) -> Vec<u8> {
+pub fn render_gray_page(
+    data: &[StockData],
+    width: i32,
+    height: i32,
+    view: &str,
+    page: usize,
+) -> Vec<u8> {
     let t0 = std::time::Instant::now();
     let svg = render_svg(data, width, height, view, page);
     let t_tpl = t0.elapsed();
@@ -575,8 +697,13 @@ pub fn render_gray_page(data: &[StockData], width: i32, height: i32, view: &str,
     let tree = resvg::usvg::Tree::from_str(&svg, &opt).expect("svg parse");
     let t_parse = t0.elapsed() - t_tpl;
     let size = tree.size();
-    let mut pix = resvg::tiny_skia::Pixmap::new(size.width() as u32, size.height() as u32).expect("pixmap");
-    resvg::render(&tree, resvg::tiny_skia::Transform::identity(), &mut pix.as_mut());
+    let mut pix =
+        resvg::tiny_skia::Pixmap::new(size.width() as u32, size.height() as u32).expect("pixmap");
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::identity(),
+        &mut pix.as_mut(),
+    );
     let t_raster = t0.elapsed() - t_tpl - t_parse;
     let gray = pixmap_to_gray(&pix);
     let t_gray = t0.elapsed() - t_tpl - t_parse - t_raster;
@@ -589,10 +716,11 @@ pub fn render_gray_page(data: &[StockData], width: i32, height: i32, view: &str,
     gray
 }
 
-// 全页预渲染：数据更新时一次做完，点按翻页只走缓存
 pub fn render_all_pages(data: &[StockData], width: i32, height: i32, view: &str) -> Vec<Vec<u8>> {
     let total = total_pages(data, height, view).max(1);
-    (0..total).map(|p| render_gray_page(data, width, height, view, p)).collect()
+    (0..total)
+        .map(|p| render_gray_page(data, width, height, view, p))
+        .collect()
 }
 
 pub fn render_gray(data: &[StockData], width: i32, height: i32, view: &str) -> Vec<u8> {

@@ -91,7 +91,6 @@ fn main() {
     differ.update(&disp, &gray, width, height, true).unwrap();
     let mut last = data;
     let mut count = 0usize;
-    // 视图池：同一批数据下所有到访过的视图/风格常驻，命中零渲染
     let mut pool: std::collections::HashMap<String, Vec<Vec<u8>>> = std::collections::HashMap::new();
     pool.insert(
         pool_key(&input::view(), &input::style_mode()),
@@ -102,9 +101,8 @@ fn main() {
     loop {
         match trigger.recv_timeout(std::time::Duration::from_secs(interval)) {
             Ok(full) => {
-                // 用户点按：先按需补拉当前视图数据（切 Tab 时覆盖缺失的代码），
-                // 池命中则零渲染。切视图/风格、手动刷新走 GC16 全闪；
-                // 同视图翻页走 DU 快刷，每 10 次闪一次去鬼影。
+                // 切 Tab 时覆盖本地缺失的代码；切视图/风格走 GC16，同视图翻页走 DU，
+                // 每 10 次快刷全闪一次去鬼影
                 let view = input::view();
                 last = fetch::get_data(&view);
                 let key = pool_key(&view, &input::style_mode());
