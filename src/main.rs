@@ -71,7 +71,10 @@ fn main() {
     let disp = fbink::Display::open().expect("display init");
     let mut differ = fbink::ScreenDiffer::new();
 
+    // 字体磁盘加载与首轮网络 fetch 并行：隐藏预热延迟，首屏即缓存命中
+    let warmer = std::thread::spawn(render::precache_names);
     let data = fetch::refresh_data(&view0);
+    warmer.join().ok();
     config::update_data_refresh_time();
     eprintln!("Fetched {} stocks", data.len());
 

@@ -239,6 +239,32 @@ fn char_widths(text: &str, font_px: i32) -> Vec<i32> {
 }
 
 fn split_name(name: &str, font_px: i32, max_w: i32) -> (String, String) {
+    // 股票名静态不变：按 (name, px, max_w) 缓存，渲染循环零 skrifa 解析
+    static SPLIT_CACHE: std::sync::LazyLock<
+        std::sync::Mutex<std::collections::HashMap<(String, i32, i32), (String, String)>>,
+    > = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    let key = (name.to_string(), font_px, max_w);
+    if let Some(hit) = SPLIT_CACHE.lock().unwrap().get(&key) {
+        return hit.clone();
+    }
+    let computed = split_name_uncached(name, font_px, max_w);
+    SPLIT_CACHE.lock().unwrap().insert(key, computed.clone());
+    computed
+}
+
+/// 启动预热：把两种 style 的截断结果一次性算好，首屏即缓存命中；
+/// 顺带触发 fontset() 磁盘加载，可与首轮网络 fetch 并行
+pub fn precache_names() {
+    let _ = fontset();
+    for s in config::stocks() {
+        let name = if s.name.is_empty() { &s.code } else { &s.name };
+        // 与 render_svg 内布局常量保持一致：large(px8, sp_x 210) / normal(px6, sp_x 240)
+        split_name(name, px(8), 210 - (MARGIN_X + 15) - 5);
+        split_name(name, px(6), 240 - (MARGIN_X + 15) - 5);
+    }
+}
+
+fn split_name_uncached(name: &str, font_px: i32, max_w: i32) -> (String, String) {
     let chars: Vec<char> = name.chars().collect();
     let widths = char_widths(name, font_px);
     let total: i32 = widths.iter().sum();
@@ -297,7 +323,8 @@ fn spark_points(
     } else {
         None
     };
-    let mut pts = String::new();
+    let mut pts = String::with_capacity(prices.len() * 12);
+    use std::fmt::Write as _;
     for (i, &p) in prices.iter().enumerate() {
         let x = if is_yahoo && item.timestamps.len() == prices.len() {
             let total = (item.regular_end - item.regular_start).max(1) as f64;
@@ -312,7 +339,7 @@ fn spark_points(
         if i > 0 {
             pts.push(' ');
         }
-        pts.push_str(&format!("{x},{y}"));
+        let _ = write!(&mut pts, "{x},{y}");
     }
     (pts, ref_y)
 }
@@ -322,6 +349,9 @@ static TPL: OnceLock<Environment<'static>> = OnceLock::new();
 fn env() -> &'static Environment<'static> {
     TPL.get_or_init(|| {
         let mut e = Environment::new();
+        // 去掉块标签周围的空白行：SVG 变紧凑，XML 词法负担小，模板输出也小一截
+        e.set_trim_blocks(true);
+        e.set_lstrip_blocks(true);
         e.add_template("screen", include_str!("../templates/screen.svg"))
             .unwrap();
         e
@@ -650,35 +680,63 @@ fn fontset() -> &'static FontSet {
     })
 }
 
+thread_local! {
+    // 同尺寸重复利用：6MB Pixmap 只分配一次，后续 fill(白) 复用
+    static PIXMAP: std::cell::RefCell<Option<resvg::tiny_skia::Pixmap>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn render_tree(tree: &resvg::usvg::Tree) {
+    PIXMAP.with(|cell| {
+        let (w, h) = (tree.size().width() as u32, tree.size().height() as u32);
+        let mut slot = cell.borrow_mut();
+        let reuse = matches!(&*slot, Some(p) if p.width() == w && p.height() == h);
+        if !reuse {
+            *slot = Some(resvg::tiny_skia::Pixmap::new(w, h).expect("pixmap"));
+        }
+        let pix = slot.as_mut().expect("pixmap");
+        pix.fill(resvg::tiny_skia::Color::WHITE);
+        resvg::render(tree, resvg::tiny_skia::Transform::identity(), &mut pix.as_mut());
+    });
+}
+
 pub fn render_pixmap(svg: &str) -> resvg::tiny_skia::Pixmap {
     let fs = fontset();
     let mut opt = resvg::usvg::Options::default();
     opt.fontdb = fs.db.clone();
     let tree = resvg::usvg::Tree::from_str(svg, &opt).expect("svg parse");
-    let size = tree.size();
-    let (w, h) = (size.width() as u32, size.height() as u32);
-    let mut pix = resvg::tiny_skia::Pixmap::new(w, h).expect("pixmap");
-    resvg::render(
-        &tree,
-        resvg::tiny_skia::Transform::identity(),
-        &mut pix.as_mut(),
-    );
-    pix
+    render_tree(&tree);
+    PIXMAP.with(|cell| cell.borrow().as_ref().expect("pixmap").clone())
 }
 
+pub fn pixmap_to_gray_into(pix: &resvg::tiny_skia::Pixmap, out: &mut Vec<u8>) {
+    let n = pix.width() as usize * pix.height() as usize;
+    out.clear();
+    out.reserve(n);
+    // SAFETY: 刚 reserve，set_len 后逐字节写入，无未初始化读取
+    #[allow(clippy::uninit_vec)]
+    unsafe {
+        out.set_len(n);
+    }
+    let src = pix.data();
+    // 白底 premultiplied 展开：out = src + 255 - a；系数和 256，位移代除法，无分支可向量化
+    for (i, p) in src.chunks_exact(4).enumerate() {
+        let a = p[3] as u32;
+        let r = p[0] as u32 + 255 - a;
+        let g = p[1] as u32 + 255 - a;
+        let b = p[2] as u32 + 255 - a;
+        // SAFETY: i < n，out 长度已设为 n
+        unsafe {
+            *out.get_unchecked_mut(i) = ((r * 77 + g * 150 + b * 29) >> 8) as u8;
+        }
+    }
+}
+
+#[allow(dead_code)]
 pub fn pixmap_to_gray(pix: &resvg::tiny_skia::Pixmap) -> Vec<u8> {
-    // 白底 premultiplied 展开：out = src + 255 - a，精确无损；
-    // 亮度系数和 256，用位移代替除法；全程无分支，LLVM 可向量化
-    pix.data()
-        .chunks_exact(4)
-        .map(|p| {
-            let a = p[3] as u32;
-            let r = p[0] as u32 + 255 - a;
-            let g = p[1] as u32 + 255 - a;
-            let b = p[2] as u32 + 255 - a;
-            ((r * 77 + g * 150 + b * 29) >> 8) as u8
-        })
-        .collect()
+    let mut out = Vec::new();
+    pixmap_to_gray_into(pix, &mut out);
+    out
 }
 
 pub fn render_gray_page(
@@ -696,16 +754,10 @@ pub fn render_gray_page(
     opt.fontdb = fs.db.clone();
     let tree = resvg::usvg::Tree::from_str(&svg, &opt).expect("svg parse");
     let t_parse = t0.elapsed() - t_tpl;
-    let size = tree.size();
-    let mut pix =
-        resvg::tiny_skia::Pixmap::new(size.width() as u32, size.height() as u32).expect("pixmap");
-    resvg::render(
-        &tree,
-        resvg::tiny_skia::Transform::identity(),
-        &mut pix.as_mut(),
-    );
+    render_tree(&tree);
     let t_raster = t0.elapsed() - t_tpl - t_parse;
-    let gray = pixmap_to_gray(&pix);
+    let mut gray = Vec::new();
+    PIXMAP.with(|cell| pixmap_to_gray_into(cell.borrow().as_ref().expect("pixmap"), &mut gray));
     let t_gray = t0.elapsed() - t_tpl - t_parse - t_raster;
     let texts = svg.matches("<text").count();
     crate::dlog!(

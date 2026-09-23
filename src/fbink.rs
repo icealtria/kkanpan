@@ -183,6 +183,62 @@ pub struct DirtyRect {
     pub h: i32,
 }
 
+// 碎片合并：数字/Sparkline 刷新常打出几十个小 rect（>15 就被迫整屏 GL16 全闪）。
+// 贪心合并并集开销最小的一对，直到 ≤8 个或开销超 50%，把“31 rects / 4.9%”收成几个 DU 局部刷新
+fn merge_rects(mut rects: Vec<DirtyRect>) -> Vec<DirtyRect> {
+    if rects.len() <= 8 {
+        return rects;
+    }
+    let area = |r: &DirtyRect| (r.w as u64) * (r.h as u64);
+    let union = |a: &DirtyRect, b: &DirtyRect| DirtyRect {
+        x: a.x.min(b.x),
+        y: a.y.min(b.y),
+        w: (a.x + a.w).max(b.x + b.w) - a.x.min(b.x),
+        h: (a.y + a.h).max(b.y + b.h) - a.y.min(b.y),
+    };
+    while rects.len() > 8 {
+        let mut best: Option<(usize, usize, u64)> = None;
+        for i in 0..rects.len() {
+            for j in (i + 1)..rects.len() {
+                let cost = area(&union(&rects[i], &rects[j]))
+                    .saturating_sub(area(&rects[i]) + area(&rects[j]));
+                if best.map_or(true, |(_, _, c)| cost < c) {
+                    best = Some((i, j, cost));
+                }
+            }
+        }
+        let (i, j, cost) = best.expect("len > 8");
+        if cost * 2 > area(&rects[i]) + area(&rects[j]) {
+            break;
+        }
+        rects[i] = union(&rects[i], &rects[j]);
+        rects.swap_remove(j);
+    }
+    rects
+}
+
+#[cfg(test)]
+mod tests {
+    use super::merge_rects;
+    use super::DirtyRect;
+
+    #[test]
+    fn merges_stacked_neighbors() {
+        let v: Vec<DirtyRect> = (0..12)
+            .map(|i| DirtyRect { x: 0, y: i * 24, w: 24, h: 24 })
+            .collect();
+        assert_eq!(merge_rects(v).len(), 8);
+    }
+
+    #[test]
+    fn keeps_far_apart() {
+        let v: Vec<DirtyRect> = (0..9)
+            .map(|i| DirtyRect { x: i * 200, y: 0, w: 24, h: 24 })
+            .collect();
+        assert_eq!(merge_rects(v).len(), 9);
+    }
+}
+
 pub struct ScreenDiffer {
     prev: Option<Vec<u8>>,
     w: i32,
@@ -256,7 +312,7 @@ impl ScreenDiffer {
                 h: ((y1 - y0) * bs).min(h - y0 * bs),
             });
         }
-        out
+        merge_rects(out)
     }
 
     pub fn update(&mut self, disp: &Display, gray: &[u8], w: i32, h: i32, full: bool) -> Result<(), String> {

@@ -6,6 +6,10 @@ FBINK_LIB="fbinklib/libfbink.a"
 TARGET="armv7-unknown-linux-musleabihf"
 OUT="target/$TARGET/release/kkanpan"
 
+# armv7 默认不开 NEON（已实测 asm：零向量指令）；Kindle 的 A9/A7 全带 NEON，
+# 开后 gray/parse/raster 里的循环自动向量化（gray 实测编出 vld4+vmlal，16px/iter）
+export RUSTFLAGS="-C target-cpu=cortex-a9 -C target-feature=+neon -C codegen-units=1"
+
 if [ ! -f "$FBINK_LIB" ]; then
     echo "==> 编译 FBInk for Kindle (PIC static library)..."
     if ! command -v arm-linux-gnueabihf-gcc &>/dev/null; then
