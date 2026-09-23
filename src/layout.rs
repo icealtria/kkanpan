@@ -69,7 +69,6 @@ pub(crate) fn paginate(data: &[StockData], height: i32, view: &str) -> Vec<Vec<B
             blocks.push(Block::Card(it));
         }
     }
-    let _ = card_h(large);
     let ph = (height - CONTENT_TOP - BOTTOM_RESERVE).max(200);
     let h_of = |b: &Block| match b {
         Block::Header { .. } => HEADER_H,

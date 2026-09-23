@@ -94,7 +94,7 @@ pub fn serve(host: &str, port: u16, ctx: Ctx) {
                      <a href=\"/exit\">[exit]</a></div>\
                      <img src=\"/screen.png\" style=\"max-width:1072px;width:100%;background:#fff\">\
                      </body></html>",
-                    freight = crate::input::style_label()
+                    freight = crate::input::style_mode().label()
                 );
                 req.respond(
                     tiny_http::Response::from_string(html)

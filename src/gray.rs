@@ -264,13 +264,6 @@ pub fn pixmap_to_gray_into(pix: &resvg::tiny_skia::Pixmap, out: &mut Vec<u8>) {
     }
 }
 
-#[allow(dead_code)]
-pub fn pixmap_to_gray(pix: &resvg::tiny_skia::Pixmap) -> Vec<u8> {
-    let mut out = Vec::new();
-    pixmap_to_gray_into(pix, &mut out);
-    out
-}
-
 // 静态层缓存：Tab/表头/股票名只与 (w,h,view,style,page) 有关，数据刷新不失效；
 // pix 供波形 tile 裁切，gray 供整屏 1.5MB 快拷（代替 6MB RGBA 拷贝）
 pub(crate) struct BaseEntry {

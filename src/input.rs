@@ -90,10 +90,6 @@ pub fn next_style() -> StyleMode {
     m
 }
 
-pub fn style_label() -> &'static str {
-    style_mode().label()
-}
-
 pub fn touch_enabled() -> bool {
     TOUCH_ON.load(Ordering::Relaxed)
 }

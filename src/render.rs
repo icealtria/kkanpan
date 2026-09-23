@@ -56,7 +56,7 @@ struct CtxBlock {
 struct Screen<'a> {
     w: i32,
     h: i32,
-    layer: &'a str, // "full" | "base" | "dyn"
+    layer: &'a str, // "full"（server 预览） | "base"（静态底）
     font_family: &'a str,
     title_px: i32,
     mode_tag: &'a str,
@@ -107,9 +107,8 @@ fn render_svg_layer(
     page: usize,
     layer: &str,
 ) -> (String, Vec<BlitText>) {
-    // full 只给 server 预览用，texts 用不上；base 收静态字，dyn 收动态字
+    // full 只给 server 预览用，texts 用不上；base 收静态字（动态字由 compose 直 blit）
     let want_static = layer == "base";
-    let want_dyn = layer == "dyn";
     let mut texts: Vec<BlitText> = vec![];
     let large = crate::input::style_mode().is_large();
     let (eff, is_auto) = config::effective_group(view);
@@ -232,12 +231,7 @@ fn render_svg_layer(
                     item.name.clone()
                 };
                 let max_w = sp_x - (MARGIN_X + 15) - 5;
-                // base/full 才排名字，dyn 只算坐标；反之 spark/价格只在 dyn/full 算
-                let (l1, l2) = if layer == "dyn" {
-                    (String::new(), String::new())
-                } else {
-                    split_name(&name, name_px, max_w)
-                };
+                let (l1, l2) = split_name(&name, name_px, max_w);
                 let code_y = if l2.is_empty() {
                     y + code_dy
                 } else {
@@ -269,10 +263,6 @@ fn render_svg_layer(
                         });
                     }
                     texts.push(BlitText { s: item.code.clone(), x: nx, y: code_y + code_px, px: code_px, anchor: Anchor::Start, invert: false });
-                }
-                if want_dyn {
-                    texts.push(BlitText { s: price_s.clone(), x: width - 45, y: y + pr_dy + pr_px, px: pr_px, anchor: Anchor::End, invert: false });
-                    texts.push(BlitText { s: chg_s.clone(), x: width - 45, y: y + ch_dy + ch_px, px: ch_px, anchor: Anchor::End, invert: false });
                 }
                 blocks.push(CtxBlock {
                     is_header: false,
@@ -336,16 +326,6 @@ fn render_svg_layer(
             y: height - 24 + px(4),
             px: px(4),
             anchor: Anchor::Start,
-            invert: false,
-        });
-    }
-    if want_dyn {
-        texts.push(BlitText {
-            s: status_text.clone(),
-            x: width - MARGIN_X,
-            y: height - 24 + px(4),
-            px: px(4),
-            anchor: Anchor::End,
             invert: false,
         });
     }
@@ -482,13 +462,10 @@ mod render_tests {
         let d = sample();
         let (full, _) = render_svg_layer(&d, 1072, 1448, "ALL", 0, "full");
         let (base, base_texts) = render_svg_layer(&d, 1072, 1448, "ALL", 0, "base");
-        let (dyn_, dyn_texts) = render_svg_layer(&d, 1072, 1448, "ALL", 0, "dyn");
-        // full 照旧含全部文字；base/dyn 的 SVG 里已无 <text>，文字走 blit
+        // full 含全部文字；base 的 SVG 里无 <text>，静态字走 blit；动态字由 compose 直 blit
         assert!(full.contains("KKANPAN") && full.contains("10.26") && full.contains("浦发银行"));
-        assert!(!base.contains("<text") && !dyn_.contains("<text"));
-        assert!(dyn_.contains("<polyline"));
+        assert!(!base.contains("<text"));
         assert!(base_texts.iter().any(|t| t.s.contains("浦发银行")));
-        assert!(dyn_texts.iter().any(|t| t.s.contains("10.26")));
     }
 
     #[test]
