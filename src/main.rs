@@ -98,8 +98,8 @@ fn main() {
     let gray = render::render_gray(&data, width, height, &input::view());
     differ.update(&disp, &gray, width, height, true).unwrap();
     let mut last = data;
-    let mut count = 0usize;
-    let mut fast_count = 0usize;
+    let mut flash_count = 0usize;
+    let every = config::app().full_flash_every.max(1) as usize;
     let mut data_ver = 1u64;
 
     // 懒加载分页缓存：只存单页，用户翻到哪页才渲染哪页
@@ -119,9 +119,9 @@ fn main() {
         }
         match trigger.recv_timeout(std::time::Duration::from_secs(1)) {
             Ok(full) => {
-                // 切 Tab 时覆盖本地缺失的代码；切视图/风格走 GC16，同视图翻页走 DU，
-                // 每 full_flash_every 次快刷全闪一次去鬼影。
-                // 点按只读内存快照，绝不触发同步网络请求；网络只走后台 Timeout 分支
+                // 点按只用内存里的缓存数据，不发网络请求（网络只在后台定时刷新）。
+                // 切视图/风格本来就全闪；翻页等局部刷新累计 flash_count，
+                // 每 every 次全闪一轮，清掉墨水屏残影。
                 let view = input::view();
                 last = fetch::cached_snapshot(&view);
                 if last.is_empty() {
@@ -133,12 +133,11 @@ fn main() {
                 if !pool.contains_key(&key) {
                     pool.insert(key.clone(), render::render_gray_page(&last, width, height, &view, cur));
                 }
-                let every = config::app().full_flash_every.max(1) as usize;
                 let do_full = if full {
                     true
                 } else {
-                    fast_count += 1;
-                    fast_count % every == 0
+                    flash_count += 1;
+                    flash_count % every == 0
                 };
                 differ.update(&disp, &pool[&key], width, height, do_full).unwrap();
             }
@@ -147,7 +146,6 @@ fn main() {
                     continue;
                 }
                 last_tick = std::time::Instant::now();
-                count += 1;
                 let d = fetch::refresh_data(&input::view());
                 if data_changed(&last, &d) {
                     config::update_data_refresh_time();
@@ -158,7 +156,10 @@ fn main() {
                     let cur = input::clamp_page(total);
                     // 后台更新也只渲染当前停留的一页，其余页等用户翻到再懒加载
                     let gray = render::render_gray_page(&d, width, height, &view, cur);
-                    differ.update(&disp, &gray, width, height, count % 5 == 0).unwrap();
+                    flash_count += 1;
+                    differ
+                        .update(&disp, &gray, width, height, flash_count % every == 0)
+                        .unwrap();
                     pool.insert(page_cache_key(&view, &input::style_mode(), cur, data_ver), gray);
                 }
                 last = d;
