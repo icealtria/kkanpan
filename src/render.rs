@@ -397,6 +397,7 @@ struct BlitText {
     y: i32, // 基线（对齐 SVG text 的 y）
     px: i32,
     anchor: Anchor,
+    invert: bool, // 白字黑底（表头条/选中 Tab）：blit 时 255-v 反色，与直接渲染等价
 }
 
 static SPRITES: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<(char, i32), Sprite>>> =
@@ -484,6 +485,8 @@ fn blit_text(canvas: &mut resvg::tiny_skia::Pixmap, t: &BlitText) {
     };
     let (cw, chh) = (canvas.width() as i32, canvas.height() as i32);
     let data = canvas.data_mut();
+    // 反白时背景是黑(0)：跳过反色后等于背景的像素
+    let bg: u8 = if t.invert { 0 } else { 255 };
     for (ch, adv) in t.s.chars().zip(advs) {
         let sp = sprite_for(ch, t.px);
         if !sp.px.is_empty() {
@@ -495,11 +498,12 @@ fn blit_text(canvas: &mut resvg::tiny_skia::Pixmap, t: &BlitText) {
                 let drow = yy * cw * 4;
                 for xx in xa..xb {
                     let v = sp.px[(srow + (xx - x0)) as usize];
-                    if v != 255 {
+                    let w = if t.invert { 255 - v } else { v };
+                    if w != bg {
                         let o = (drow + xx * 4) as usize;
-                        data[o] = v;
-                        data[o + 1] = v;
-                        data[o + 2] = v;
+                        data[o] = w;
+                        data[o + 1] = w;
+                        data[o + 2] = w;
                         data[o + 3] = 255;
                     }
                 }
@@ -565,16 +569,17 @@ fn render_svg_layer(
 
     if want_static {
         let tpx = px(6);
-        texts.push(BlitText { s: "KKANPAN".into(), x: 30, y: 16 + px(8), px: px(8), anchor: Anchor::Start });
-        texts.push(BlitText { s: mode_tag.clone(), x: width - 460, y: 20 + tpx, px: tpx, anchor: Anchor::Start });
+        texts.push(BlitText { s: "KKANPAN".into(), x: 30, y: 16 + px(8), px: px(8), anchor: Anchor::Start, invert: false });
+        texts.push(BlitText { s: mode_tag.clone(), x: width - 460, y: 20 + tpx, px: tpx, anchor: Anchor::Start, invert: false });
         texts.push(BlitText {
             s: (if large { "L" } else { "S" }).to_string(),
             x: width - 185 + 40,
             y: 10 + 8 + tpx,
             px: tpx,
             anchor: Anchor::Middle,
+            invert: false,
         });
-        texts.push(BlitText { s: "X".into(), x: width - 95 + 32, y: 40, px: 25, anchor: Anchor::Middle });
+        texts.push(BlitText { s: "X".into(), x: width - 95 + 32, y: 40, px: 25, anchor: Anchor::Middle, invert: false });
         for t in &tabs {
             texts.push(BlitText {
                 s: t.key.to_string(),
@@ -582,6 +587,7 @@ fn render_svg_layer(
                 y: t.y + 12 + tpx,
                 px: tpx,
                 anchor: Anchor::Middle,
+                invert: t.selected, // 选中 Tab 是白字黑底
             });
         }
     }
@@ -678,6 +684,7 @@ fn render_svg_layer(
                         y: y - HEADER_H + HEADER_GAP + 8 + px(5),
                         px: px(5),
                         anchor: Anchor::Start,
+                        invert: true, // 黑底白字条
                     });
                 }
             }
@@ -713,7 +720,7 @@ fn render_svg_layer(
                 if want_static {
                     let nx = MARGIN_X + 15;
                     let ny = y + name_dy;
-                    texts.push(BlitText { s: l1.clone(), x: nx, y: ny + name_px, px: name_px, anchor: Anchor::Start });
+                    texts.push(BlitText { s: l1.clone(), x: nx, y: ny + name_px, px: name_px, anchor: Anchor::Start, invert: false });
                     if !l2.is_empty() {
                         texts.push(BlitText {
                             s: l2.clone(),
@@ -721,13 +728,14 @@ fn render_svg_layer(
                             y: ny + 2 * name_px + name_px / 3,
                             px: name_px,
                             anchor: Anchor::Start,
+                            invert: false,
                         });
                     }
-                    texts.push(BlitText { s: item.code.clone(), x: nx, y: code_y + code_px, px: code_px, anchor: Anchor::Start });
+                    texts.push(BlitText { s: item.code.clone(), x: nx, y: code_y + code_px, px: code_px, anchor: Anchor::Start, invert: false });
                 }
                 if want_dyn {
-                    texts.push(BlitText { s: price_s.clone(), x: width - 45, y: y + pr_dy + pr_px, px: pr_px, anchor: Anchor::End });
-                    texts.push(BlitText { s: chg_s.clone(), x: width - 45, y: y + ch_dy + ch_px, px: ch_px, anchor: Anchor::End });
+                    texts.push(BlitText { s: price_s.clone(), x: width - 45, y: y + pr_dy + pr_px, px: pr_px, anchor: Anchor::End, invert: false });
+                    texts.push(BlitText { s: chg_s.clone(), x: width - 45, y: y + ch_dy + ch_px, px: ch_px, anchor: Anchor::End, invert: false });
                 }
                 blocks.push(CtxBlock {
                     is_header: false,
@@ -782,6 +790,7 @@ fn render_svg_layer(
                 y: height - 40 + px(4),
                 px: px(4),
                 anchor: Anchor::Middle,
+                invert: false,
             });
         }
         texts.push(BlitText {
@@ -790,6 +799,7 @@ fn render_svg_layer(
             y: height - 24 + px(4),
             px: px(4),
             anchor: Anchor::Start,
+            invert: false,
         });
     }
     if want_dyn {
@@ -799,6 +809,7 @@ fn render_svg_layer(
             y: height - 24 + px(4),
             px: px(4),
             anchor: Anchor::End,
+            invert: false,
         });
     }
 
@@ -1179,7 +1190,18 @@ mod render_tests {
         assert!(!sp.px.is_empty() && sp.w > 0 && sp.h > 0);
         let mut pix = resvg::tiny_skia::Pixmap::new(200, 60).expect("pixmap");
         pix.fill(resvg::tiny_skia::Color::WHITE);
-        blit_text(&mut pix, &BlitText { s: "10.26".into(), x: 10, y: 40, px: 33, anchor: Anchor::Start });
+        blit_text(&mut pix, &BlitText { s: "10.26".into(), x: 10, y: 40, px: 33, anchor: Anchor::Start, invert: false });
         assert!(pix.data().iter().any(|&v| v < 128));
+    }
+
+    #[test]
+    fn inverted_blits_white_on_black() {
+        // 表头条/选中 Tab：黑底上必须看到亮字，而不是糊成一片
+        use super::{blit_text, Anchor, BlitText};
+        let mut pix = resvg::tiny_skia::Pixmap::new(200, 60).expect("pixmap");
+        pix.fill(resvg::tiny_skia::Color::BLACK);
+        blit_text(&mut pix, &BlitText { s: "A股".into(), x: 10, y: 40, px: 25, anchor: Anchor::Start, invert: true });
+        let bright = pix.data().chunks_exact(4).filter(|p| p[0] > 200).count();
+        assert!(bright > 50, "bright={bright}");
     }
 }
