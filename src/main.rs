@@ -1,10 +1,13 @@
 mod config;
 mod fbink;
 mod fetch;
+mod gray;
 mod input;
 mod kindle;
+mod layout;
 mod render;
 mod server;
+mod text;
 mod util;
 
 fn data_changed(a: &[config::StockData], b: &[config::StockData]) -> bool {
@@ -16,7 +19,12 @@ fn data_changed(a: &[config::StockData], b: &[config::StockData]) -> bool {
             || (x.price - y.price).abs() > 1e-9
             || (x.change - y.change).abs() > 1e-9
             || (x.pct - y.pct).abs() > 1e-9
-            || x.prices.len() != y.prices.len()
+            || (x.prev - y.prev).abs() > 1e-9
+            || (x.chart_prev_close - y.chart_prev_close).abs() > 1e-9
+            || x.regular_start != y.regular_start
+            || x.regular_end != y.regular_end
+            || x.prices != y.prices
+            || x.timestamps != y.timestamps
     })
 }
 
@@ -62,6 +70,8 @@ fn main() {
     input::init_state(&view0);
     let trigger = input::init_trigger();
     eprintln!("Starting kkanpan (view={view0})...");
+    // 编译期自检：RUSTFLAGS 的 +neon 是否透过 zigbuild 生效，gray 快慢全看它
+    eprintln!("[simd] neon={}", cfg!(target_feature = "neon"));
 
     kindle::disable_coexist_mode();
     if config::app().dim_frontlight {
@@ -71,7 +81,10 @@ fn main() {
     let disp = fbink::Display::open().expect("display init");
     let mut differ = fbink::ScreenDiffer::new();
 
+    // 字体磁盘加载与首轮网络 fetch 并行：隐藏预热延迟，首屏即缓存命中
+    let warmer = std::thread::spawn(text::precache_names);
     let data = fetch::refresh_data(&view0);
+    warmer.join().ok();
     config::update_data_refresh_time();
     eprintln!("Fetched {} stocks", data.len());
 
@@ -104,9 +117,9 @@ fn main() {
 
     // 懒加载分页缓存：只存单页，用户翻到哪页才渲染哪页
     let mut pool: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
-    let cur = input::clamp_page(render::total_pages(&last, height, &input::view()).max(1));
+    let cur = input::clamp_page(layout::total_pages(&last, height, &input::view()).max(1));
     pool.insert(
-        page_cache_key(&input::view(), &input::style_mode(), cur, data_ver),
+        page_cache_key(&input::view(), input::style_mode().as_str(), cur, data_ver),
         gray,
     );
 
@@ -127,9 +140,9 @@ fn main() {
                 if last.is_empty() {
                     last = fetch::get_data(&view); // 仅该 View 从未拉取过时 fallback
                 }
-                let total = render::total_pages(&last, height, &view).max(1);
+                let total = layout::total_pages(&last, height, &view).max(1);
                 let cur = input::clamp_page(total);
-                let key = page_cache_key(&view, &input::style_mode(), cur, data_ver);
+                let key = page_cache_key(&view, input::style_mode().as_str(), cur, data_ver);
                 if !pool.contains_key(&key) {
                     pool.insert(key.clone(), render::render_gray_page(&last, width, height, &view, cur));
                 }
@@ -152,7 +165,7 @@ fn main() {
                     data_ver += 1;
                     pool.clear(); // 数据变了，所有视图的页面缓存统统失效
                     let view = input::view();
-                    let total = render::total_pages(&d, height, &view).max(1);
+                    let total = layout::total_pages(&d, height, &view).max(1);
                     let cur = input::clamp_page(total);
                     // 后台更新也只渲染当前停留的一页，其余页等用户翻到再懒加载
                     let gray = render::render_gray_page(&d, width, height, &view, cur);
@@ -160,7 +173,7 @@ fn main() {
                     differ
                         .update(&disp, &gray, width, height, flash_count % every == 0)
                         .unwrap();
-                    pool.insert(page_cache_key(&view, &input::style_mode(), cur, data_ver), gray);
+                    pool.insert(page_cache_key(&view, input::style_mode().as_str(), cur, data_ver), gray);
                 }
                 last = d;
             }
@@ -170,4 +183,35 @@ fn main() {
 
     kindle::enable_coexist_mode();
     kindle::restore_frontlight();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::data_changed;
+    use crate::config::StockData;
+
+    fn snap(price: f64, last: f64) -> Vec<StockData> {
+        vec![StockData {
+            code: "sh600000".to_string(),
+            name: "浦发".to_string(),
+            group: "g".to_string(),
+            price,
+            change: 0.1,
+            pct: 1.0,
+            prev: 10.0,
+            prices: vec![10.0, 10.1, last],
+            timestamps: vec![1, 2, 3],
+            regular_start: 0,
+            regular_end: 0,
+            chart_prev_close: 0.0,
+        }]
+    }
+
+    #[test]
+    fn detects_same_length_corrections() {
+        let a = snap(10.2, 10.2);
+        assert!(!data_changed(&a, &snap(10.2, 10.2)));
+        // 同长度、尾点被修正：旧逻辑只比 len 会漏刷新
+        assert!(data_changed(&a, &snap(10.2, 10.25)));
+    }
 }

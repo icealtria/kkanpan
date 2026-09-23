@@ -1,35 +1,39 @@
 {% autoescape true %}<svg width="{{ w }}" height="{{ h }}" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges" text-rendering="optimizeSpeed">
+{% if layer != "dyn" %}
 <rect x="0" y="0" width="{{ w }}" height="{{ h }}" fill="white"/>
-<text x="30" y="{{ 16 + title_px }}" font-size="{{ title_px }}" fill="black" font-family="{{ font_family }}">KKANPAN</text>
-<text x="{{ w - 460 }}" y="{{ 20 + mode_px }}" font-size="{{ mode_px }}" fill="black" font-family="{{ font_family }}">{{ mode_tag }}</text>
+{% if layer == "full" %}<text x="30" y="{{ 16 + title_px }}" font-size="{{ title_px }}" fill="black" font-family="{{ font_family }}">KKANPAN</text>
+<text x="{{ w - 460 }}" y="{{ 20 + mode_px }}" font-size="{{ mode_px }}" fill="black" font-family="{{ font_family }}">{{ mode_tag }}</text>{% endif %}
 <rect x="{{ w - 185 }}" y="10" width="80" height="46" fill="white" stroke="black" stroke-width="2"/>
-<text x="{{ w - 185 + 40 }}" y="{{ 10 + 8 + tab_px }}" font-size="{{ tab_px }}" fill="black" text-anchor="middle" font-family="{{ font_family }}">{{ style_label }}</text>
+{% if layer == "full" %}<text x="{{ w - 185 + 40 }}" y="{{ 10 + 8 + tab_px }}" font-size="{{ tab_px }}" fill="black" text-anchor="middle" font-family="{{ font_family }}">{{ style_label }}</text>{% endif %}
 <rect x="{{ w - 95 }}" y="10" width="65" height="46" fill="white" stroke="black" stroke-width="3"/>
-<text x="{{ w - 95 + 32 }}" y="40" font-size="25" fill="black" text-anchor="middle" font-family="{{ font_family }}">X</text>
+{% if layer == "full" %}<text x="{{ w - 95 + 32 }}" y="40" font-size="25" fill="black" text-anchor="middle" font-family="{{ font_family }}">X</text>{% endif %}
 {% for t in tabs %}
 {% if t.selected %}<rect x="{{ t.x }}" y="{{ t.y }}" width="{{ t.w }}" height="{{ t.h }}" fill="black"/>
-<text x="{{ t.x + t.w // 2 }}" y="{{ t.y + 12 + tab_px }}" font-size="{{ tab_px }}" fill="white" text-anchor="middle" font-family="{{ font_family }}">{{ t.key }}</text>
+{% if layer == "full" %}<text x="{{ t.x + t.w // 2 }}" y="{{ t.y + 12 + tab_px }}" font-size="{{ tab_px }}" fill="white" text-anchor="middle" font-family="{{ font_family }}">{{ t.key }}</text>{% endif %}
 {% else %}<rect x="{{ t.x }}" y="{{ t.y }}" width="{{ t.w }}" height="{{ t.h }}" fill="white" stroke="black" stroke-width="2"/>
-<text x="{{ t.x + t.w // 2 }}" y="{{ t.y + 12 + tab_px }}" font-size="{{ tab_px }}" fill="black" text-anchor="middle" font-family="{{ font_family }}">{{ t.key }}</text>
+{% if layer == "full" %}<text x="{{ t.x + t.w // 2 }}" y="{{ t.y + 12 + tab_px }}" font-size="{{ tab_px }}" fill="black" text-anchor="middle" font-family="{{ font_family }}">{{ t.key }}</text>{% endif %}
 {% endif %}
 {% endfor %}
 <line x1="{{ margin_x }}" y1="{{ divider_y }}" x2="{{ w - margin_x }}" y2="{{ divider_y }}" stroke="black" stroke-width="3"/>
+{% endif %}
 {% for b in blocks %}
-{% if b.is_header %}<rect x="{{ margin_x }}" y="{{ b.bar_y }}" width="{{ w - 2 * margin_x }}" height="{{ header_bar_h }}" fill="black"/>
-<text x="{{ margin_x + 15 }}" y="{{ b.bar_y + 8 + bar_text_px }}" font-size="{{ bar_text_px }}" fill="white" font-family="{{ font_family }}">[ {{ b.group }} ]</text>
-{% else %}<rect x="{{ margin_x }}" y="{{ b.card_y }}" width="{{ w - 2 * margin_x }}" height="{{ b.card_h }}" fill="white" stroke="black" stroke-width="1"/>
-<text x="{{ b.name_x }}" y="{{ b.name_y + b.name_px }}" font-size="{{ b.name_px }}" fill="black" font-family="{{ font_family }}">{{ b.name_l1 }}</text>
-{% if b.name_l2 %}<text x="{{ b.name_x }}" y="{{ b.name_y + 2 * b.name_px + b.name_px // 3 }}" font-size="{{ b.name_px }}" fill="black" font-family="{{ font_family }}">{{ b.name_l2 }}</text>{% endif %}
-<text x="{{ b.name_x }}" y="{{ b.code_y + b.code_px }}" font-size="{{ b.code_px }}" fill="#646464" font-family="{{ font_family }}">{{ b.code }}</text>
-{% if b.spark %}<rect x="{{ b.spark_x }}" y="{{ b.spark_y }}" width="{{ b.spark_w }}" height="{{ b.spark_h }}" fill="white" stroke="black" stroke-width="1"/>
-{% if b.ref_y is not none %}<line x1="{{ b.spark_x + 4 }}" y1="{{ b.ref_y }}" x2="{{ b.spark_x + b.spark_w - 4 }}" y2="{{ b.ref_y }}" stroke="#808080" stroke-width="1" stroke-dasharray="3,3"/>{% endif %}
+{% if b.is_header %}{% if layer != "dyn" %}<rect x="{{ margin_x }}" y="{{ b.bar_y }}" width="{{ w - 2 * margin_x }}" height="{{ header_bar_h }}" fill="black"/>
+{% if layer == "full" %}<text x="{{ margin_x + 15 }}" y="{{ b.bar_y + 8 + bar_text_px }}" font-size="{{ bar_text_px }}" fill="white" font-family="{{ font_family }}">[ {{ b.group }} ]</text>{% endif %}{% endif %}
+{% else %}{% if layer != "dyn" %}<rect x="{{ margin_x }}" y="{{ b.card_y }}" width="{{ w - 2 * margin_x }}" height="{{ b.card_h }}" fill="white" stroke="black" stroke-width="1"/>
+{% if layer == "full" %}<text x="{{ b.name_x }}" y="{{ b.name_y + b.name_px }}" font-size="{{ b.name_px }}" fill="black" font-family="{{ font_family }}">{{ b.name_l1 }}</text>{% endif %}
+{% if b.name_l2 %}{% if layer == "full" %}<text x="{{ b.name_x }}" y="{{ b.name_y + 2 * b.name_px + b.name_px // 3 }}" font-size="{{ b.name_px }}" fill="black" font-family="{{ font_family }}">{{ b.name_l2 }}</text>{% endif %}{% endif %}
+{% if layer == "full" %}<text x="{{ b.name_x }}" y="{{ b.code_y + b.code_px }}" font-size="{{ b.code_px }}" fill="#646464" font-family="{{ font_family }}">{{ b.code }}</text>{% endif %}
+{% if b.spark %}<rect x="{{ b.spark_x }}" y="{{ b.spark_y }}" width="{{ b.spark_w }}" height="{{ b.spark_h }}" fill="white" stroke="black" stroke-width="1"/>{% endif %}
+{% endif %}{% if layer != "base" %}{% if b.spark %}{% if b.ref_y is not none %}<line x1="{{ b.spark_x + 4 }}" y1="{{ b.ref_y }}" x2="{{ b.spark_x + b.spark_w - 4 }}" y2="{{ b.ref_y }}" stroke="#808080" stroke-width="1" stroke-dasharray="3,3"/>{% endif %}
 <polyline points="{{ b.spark }}" fill="none" stroke="black" stroke-width="2"/>{% endif %}
-<text x="{{ w - 45 }}" y="{{ b.price_y + b.price_px }}" font-size="{{ b.price_px }}" fill="black" text-anchor="end" font-family="{{ font_family }}">{{ b.price }}</text>
-<text x="{{ w - 45 }}" y="{{ b.chg_y + b.chg_px }}" font-size="{{ b.chg_px }}" fill="black" text-anchor="end" font-family="{{ font_family }}">{{ b.chg }}</text>
+{% if layer == "full" %}<text x="{{ w - 45 }}" y="{{ b.price_y + b.price_px }}" font-size="{{ b.price_px }}" fill="black" text-anchor="end" font-family="{{ font_family }}">{{ b.price }}</text>
+<text x="{{ w - 45 }}" y="{{ b.chg_y + b.chg_px }}" font-size="{{ b.chg_px }}" fill="black" text-anchor="end" font-family="{{ font_family }}">{{ b.chg }}</text>{% endif %}{% endif %}
 {% endif %}
 {% endfor %}
-{% if page_text %}<text x="{{ w // 2 }}" y="{{ h - 40 + status_px }}" font-size="{{ status_px }}" fill="#505050" text-anchor="middle" font-family="{{ font_family }}">{{ page_text }}</text>{% endif %}
+{% if layer != "dyn" %}
+{% if page_text %}{% if layer == "full" %}<text x="{{ w // 2 }}" y="{{ h - 40 + status_px }}" font-size="{{ status_px }}" fill="#505050" text-anchor="middle" font-family="{{ font_family }}">{{ page_text }}</text>{% endif %}{% endif %}
 <line x1="{{ margin_x }}" y1="{{ h - 58 }}" x2="{{ w - margin_x }}" y2="{{ h - 58 }}" stroke="black" stroke-width="1"/>
-<text x="{{ margin_x }}" y="{{ h - 24 + status_px }}" font-size="{{ status_px }}" fill="#787878" font-family="{{ font_family }}">{{ footer_hint }}</text>
-<text x="{{ w - margin_x }}" y="{{ h - 24 + status_px }}" font-size="{{ status_px }}" fill="black" text-anchor="end" font-family="{{ font_family }}">{{ status_text }}</text>
+{% if layer == "full" %}<text x="{{ margin_x }}" y="{{ h - 24 + status_px }}" font-size="{{ status_px }}" fill="#787878" font-family="{{ font_family }}">{{ footer_hint }}</text>{% endif %}
+{% endif %}
+{% if layer == "full" %}<text x="{{ w - margin_x }}" y="{{ h - 24 + status_px }}" font-size="{{ status_px }}" fill="black" text-anchor="end" font-family="{{ font_family }}">{{ status_text }}</text>{% endif %}
 </svg>{% endautoescape %}

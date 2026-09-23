@@ -6,9 +6,9 @@ pub struct Ctx {
 fn png_screen(ctx: &Ctx) -> Vec<u8> {
     let view = crate::input::view();
     let data = crate::fetch::get_data(&view);
-    let total = crate::render::total_pages(&data, ctx.height, &view).max(1);
+    let total = crate::layout::total_pages(&data, ctx.height, &view).max(1);
     let svg = crate::render::render_svg(&data, ctx.width, ctx.height, &view, crate::input::clamp_page(total));
-    crate::render::render_pixmap(&svg).encode_png().unwrap_or_default()
+    crate::gray::render_pixmap(&svg).encode_png().unwrap_or_default()
 }
 
 pub fn serve(host: &str, port: u16, ctx: Ctx) {
@@ -94,7 +94,7 @@ pub fn serve(host: &str, port: u16, ctx: Ctx) {
                      <a href=\"/exit\">[exit]</a></div>\
                      <img src=\"/screen.png\" style=\"max-width:1072px;width:100%;background:#fff\">\
                      </body></html>",
-                    freight = crate::input::style_label()
+                    freight = crate::input::style_mode().label()
                 );
                 req.respond(
                     tiny_http::Response::from_string(html)

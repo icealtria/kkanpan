@@ -3,104 +3,15 @@ use minijinja::Environment;
 use serde::Serialize;
 use std::sync::OnceLock;
 
-// 单位=屏像素；字号 pt→px 按 300DPI 换算
-const MARGIN_X: i32 = 30;
-const CONTENT_TOP: i32 = 142;
-const BOTTOM_RESERVE: i32 = 70;
-const DIVIDER_Y: i32 = 128;
-const HEADER_H: i32 = 48;
-const HEADER_BAR_H: i32 = 38;
-const HEADER_GAP: i32 = 4;
-const NORMAL_CARD_H: i32 = 103;
-const LARGE_CARD_H: i32 = 155;
-const TAB_BAR_Y: i32 = 68;
-const TAB_BAR_H: i32 = 50;
-const TAB_GAP: i32 = 10;
-
-fn px(pt: i32) -> i32 {
-    pt * 300 / 72
-}
-
-enum Block {
-    Header { group: String },
-    Card(StockData),
-}
-
-fn card_h(style: &str) -> i32 {
-    if style == "large" {
-        LARGE_CARD_H
-    } else {
-        NORMAL_CARD_H
-    }
-}
-
-fn build_blocks(data: &[StockData], eff: &str, is_auto: bool) -> Vec<(String, Vec<StockData>)> {
-    let mut groups: Vec<(String, Vec<StockData>)> = vec![];
-    for d in data {
-        match groups.iter_mut().find(|(g, _)| g == &d.group) {
-            Some((_, v)) => v.push(d.clone()),
-            None => groups.push((d.group.clone(), vec![d.clone()])),
-        }
-    }
-    let pick = |name: &str| groups.iter().find(|(g, _)| g == name).cloned();
-    if eff == "ALL" {
-        return config::all_groups()
-            .into_iter()
-            .filter_map(|g| pick(&g))
-            .collect();
-    }
-    if is_auto {
-        return config::matching_auto_groups()
-            .into_iter()
-            .filter_map(|g| pick(&g))
-            .collect();
-    }
-    pick(eff).into_iter().collect()
-}
-
-fn paginate(data: &[StockData], height: i32, view: &str) -> Vec<Vec<Block>> {
-    let style = crate::input::style_mode();
-    let (eff, is_auto) = config::effective_group(view);
-    let mut blocks: Vec<Block> = vec![];
-    for (g, list) in build_blocks(data, &eff, is_auto) {
-        if list.is_empty() {
-            continue;
-        }
-        blocks.push(Block::Header { group: g });
-        for it in list {
-            blocks.push(Block::Card(it));
-        }
-    }
-    let _ = card_h(&style);
-    let ph = (height - CONTENT_TOP - BOTTOM_RESERVE).max(200);
-    let h_of = |b: &Block| match b {
-        Block::Header { .. } => HEADER_H,
-        Block::Card(_) => card_h(&style),
-    };
-    let mut pages: Vec<Vec<Block>> = vec![];
-    let (mut cur, mut cur_h) = (vec![], 0);
-    for b in blocks {
-        let h = h_of(&b);
-        if cur_h + h > ph && cur_h > 0 {
-            pages.push(cur);
-            cur = vec![];
-            cur_h = 0;
-        }
-        cur.push(b);
-        cur_h += h;
-    }
-    if !cur.is_empty() {
-        pages.push(cur);
-    }
-    if pages.is_empty() {
-        pages.push(vec![]);
-    }
-    pages
-}
-
-pub fn total_pages(data: &[StockData], height: i32, view: &str) -> usize {
-    paginate(data, height, view).len()
-}
+use crate::gray::{
+    BaseEntry, compose_dynamic, parse_tree, pixmap_to_gray_into, render_tree_into,
+};
+use crate::layout::{
+    Block, CONTENT_TOP, DIVIDER_Y, HEADER_BAR_H, HEADER_GAP, HEADER_H, MARGIN_X, Metrics,
+    TAB_BAR_H, TAB_BAR_Y, TAB_GAP, metrics, paginate, px, spark_points, stock_strings,
+    total_pages,
+};
+use crate::text::{Anchor, BlitText, blit_text, fontset, split_name};
 
 #[derive(Serialize)]
 struct Tab<'a> {
@@ -145,6 +56,7 @@ struct CtxBlock {
 struct Screen<'a> {
     w: i32,
     h: i32,
+    layer: &'a str, // "full"（server 预览） | "base"（静态底）
     font_family: &'a str,
     title_px: i32,
     mode_tag: &'a str,
@@ -163,165 +75,18 @@ struct Screen<'a> {
     footer_hint: &'a str,
 }
 
-fn stock_strings(price: f64, change: f64, pct: f64) -> (String, String) {
-    let price_str = if price > 0.0 {
-        format!("{price:.2}")
-    } else {
-        "--".to_string()
-    };
-    let arrow = if change > 0.0 {
-        "▲"
-    } else if change < 0.0 {
-        "▼"
-    } else {
-        " "
-    };
-    let sign_c = if change >= 0.0 { "+" } else { "" };
-    let sign_p = if pct >= 0.0 { "+" } else { "" };
-    (
-        price_str,
-        format!("{arrow} {sign_c}{change:.2} ({sign_p}{pct:.2}%)"),
-    )
-}
-
-fn sparkline_range(prices: &[f64]) -> (f64, f64) {
-    if prices.len() < 2 {
-        return (0.0, 1.0);
-    }
-    let (mut mn, mut mx) = (prices[0], prices[0]);
-    for &p in &prices[1..] {
-        mn = mn.min(p);
-        mx = mx.max(p);
-    }
-    if mx == mn {
-        (mn, mn + 1.0)
-    } else {
-        (mn, mx)
-    }
-}
-
-// advance 求和：字符数启发式对数字/拉丁误差近一倍
-fn char_widths(text: &str, font_px: i32) -> Vec<i32> {
-    let fallback = vec![font_px / 2; text.chars().count()];
-    let fs = fontset();
-    let family = resvg::usvg::fontdb::Family::Name(&fs.family);
-    let q = resvg::usvg::fontdb::Query {
-        families: &[family],
-        ..Default::default()
-    };
-    let id = match fs.db.query(&q) {
-        Some(id) => id,
-        None => return fallback,
-    };
-    fs.db
-        .with_face_data(id, |data, idx| {
-            use skrifa::MetadataProvider;
-            let font = skrifa::FontRef::from_index(data, idx).ok()?;
-            let metrics = font.glyph_metrics(
-                skrifa::instance::Size::new(font_px as f32),
-                skrifa::instance::LocationRef::default(),
-            );
-            let cmap = font.charmap();
-            Some(
-                text.chars()
-                    .map(|ch| {
-                        let w = cmap
-                            .map(ch)
-                            .and_then(|gid| metrics.advance_width(gid))
-                            .unwrap_or(font_px as f32 / 2.0);
-                        w.ceil() as i32
-                    })
-                    .collect(),
-            )
-        })
-        .flatten()
-        .unwrap_or(fallback)
-}
-
-fn split_name(name: &str, font_px: i32, max_w: i32) -> (String, String) {
-    let chars: Vec<char> = name.chars().collect();
-    let widths = char_widths(name, font_px);
-    let total: i32 = widths.iter().sum();
-    if total <= max_w {
-        return (name.to_string(), String::new());
-    }
-    let mut w = 0;
-    let mut cut = 0;
-    for (i, _) in chars.iter().enumerate() {
-        w += widths.get(i).copied().unwrap_or(font_px / 2);
-        if w > max_w {
-            break;
-        }
-        cut = i + 1;
-    }
-    if cut == 0 {
-        cut = 1;
-    }
-    (chars[..cut].iter().collect(), chars[cut..].iter().collect())
-}
-
-fn spark_points(
-    item: &StockData,
-    large: bool,
-    sx: i32,
-    sy: i32,
-    sw: i32,
-    sh: i32,
-) -> (String, Option<i32>) {
-    let prices = &item.prices;
-    if prices.len() < 2 {
-        return (String::new(), None);
-    }
-    let (mut mn, mut mx) = sparkline_range(prices);
-    let is_yahoo = item.timestamps.len() == prices.len() && item.regular_end > item.regular_start;
-    let mut reference = if is_yahoo {
-        item.chart_prev_close
-    } else {
-        item.prev
-    };
-    if reference == 0.0 {
-        reference = (mn + mx) / 2.0;
-    }
-    if large {
-        mn = mn.min(reference);
-        mx = mx.max(reference);
-    } else if reference < mn || reference > mx {
-        reference = 0.0; // 超出当日范围就不画（对齐 render.go）
-    }
-    let mut rng = mx - mn;
-    if rng == 0.0 {
-        rng = 1.0;
-    }
-    let ref_y = if reference > 0.0 {
-        Some(sy + 2 + ((mx - reference) * (sh - 4) as f64 / rng) as i32)
-    } else {
-        None
-    };
-    let mut pts = String::new();
-    for (i, &p) in prices.iter().enumerate() {
-        let x = if is_yahoo && item.timestamps.len() == prices.len() {
-            let total = (item.regular_end - item.regular_start).max(1) as f64;
-            sx + 2
-                + ((item.timestamps[i] - item.regular_start) as f64 * (sw - 4) as f64 / total)
-                    as i32
-        } else {
-            let total = config::chart_total(&item.code, prices.len()).max(1) as f64;
-            sx + 2 + (i as f64 * (sw - 4) as f64 / total) as i32
-        };
-        let y = sy + 2 + ((mx - p) * (sh - 4) as f64 / rng) as i32;
-        if i > 0 {
-            pts.push(' ');
-        }
-        pts.push_str(&format!("{x},{y}"));
-    }
-    (pts, ref_y)
-}
-
 static TPL: OnceLock<Environment<'static>> = OnceLock::new();
+
+// ---- 文字 sprite：SVG 只画图形，所有文字启动预渲染、刷新时 blit ----
+// Sprite 几何统一：画布 H=3*px、基线在 2*px 处，只裁左右白边、保留全高，
+// 不同字形基线天然对齐；dx=内容左 edge 相对笔尖，dy=基线相对内容顶
 
 fn env() -> &'static Environment<'static> {
     TPL.get_or_init(|| {
         let mut e = Environment::new();
+        // 去掉块标签周围的空白行：SVG 变紧凑，XML 词法负担小，模板输出也小一截
+        e.set_trim_blocks(true);
+        e.set_lstrip_blocks(true);
         e.add_template("screen", include_str!("../templates/screen.svg"))
             .unwrap();
         e
@@ -329,8 +94,23 @@ fn env() -> &'static Environment<'static> {
 }
 
 pub fn render_svg(data: &[StockData], width: i32, height: i32, view: &str, page: usize) -> String {
-    let style = crate::input::style_mode();
-    let large = style == "large";
+    render_svg_layer(data, width, height, view, page, "full").0
+}
+
+// 卡片布局度量（SVG 模板版与直绘版共享一份数字，零漂移）
+
+fn render_svg_layer(
+    data: &[StockData],
+    width: i32,
+    height: i32,
+    view: &str,
+    page: usize,
+    layer: &str,
+) -> (String, Vec<BlitText>) {
+    // full 只给 server 预览用，texts 用不上；base 收静态字（动态字由 compose 直 blit）
+    let want_static = layer == "base";
+    let mut texts: Vec<BlitText> = vec![];
+    let large = crate::input::style_mode().is_large();
     let (eff, is_auto) = config::effective_group(view);
     let mode_tag = if is_auto {
         format!("[AUTO: {eff}]")
@@ -355,11 +135,36 @@ pub fn render_svg(data: &[StockData], width: i32, height: i32, view: &str, page:
         })
         .collect();
 
+    if want_static {
+        let tpx = px(6);
+        texts.push(BlitText { s: "KKANPAN".into(), x: 30, y: 16 + px(8), px: px(8), anchor: Anchor::Start, invert: false });
+        texts.push(BlitText { s: mode_tag.clone(), x: width - 460, y: 20 + tpx, px: tpx, anchor: Anchor::Start, invert: false });
+        texts.push(BlitText {
+            s: (if large { "L" } else { "S" }).to_string(),
+            x: width - 185 + 40,
+            y: 10 + 8 + tpx,
+            px: tpx,
+            anchor: Anchor::Middle,
+            invert: false,
+        });
+        texts.push(BlitText { s: "X".into(), x: width - 95 + 32, y: 40, px: 25, anchor: Anchor::Middle, invert: false });
+        for t in &tabs {
+            texts.push(BlitText {
+                s: t.key.to_string(),
+                x: t.x + t.w / 2,
+                y: t.y + 12 + tpx,
+                px: tpx,
+                anchor: Anchor::Middle,
+                invert: t.selected, // 选中 Tab 是白字黑底
+            });
+        }
+    }
+
     let pages = paginate(data, height, view);
     let total = pages.len();
     let cur = page.min(total.saturating_sub(1));
 
-    let (
+    let Metrics {
         name_dy,
         name_px,
         code_dy,
@@ -373,39 +178,7 @@ pub fn render_svg(data: &[StockData], width: i32, height: i32, view: &str, page:
         ch_dy,
         ch_px,
         chh,
-    ) = if large {
-        (
-            18,
-            px(8),
-            62,
-            px(5),
-            210,
-            15,
-            width - 490,
-            LARGE_CARD_H - 30,
-            16,
-            px(9),
-            64,
-            px(6),
-            LARGE_CARD_H,
-        )
-    } else {
-        (
-            14,
-            px(6),
-            48,
-            px(4),
-            240,
-            20,
-            480,
-            63,
-            14,
-            px(8),
-            52,
-            px(5),
-            NORMAL_CARD_H,
-        )
-    };
+    } = metrics(large, width);
 
     let mut y = CONTENT_TOP;
     let mut blocks = vec![];
@@ -440,6 +213,16 @@ pub fn render_svg(data: &[StockData], width: i32, height: i32, view: &str, page:
                     chg_px: 0,
                 });
                 y += HEADER_H;
+                if want_static {
+                    texts.push(BlitText {
+                        s: format!("[ {group} ]"),
+                        x: MARGIN_X + 15,
+                        y: y - HEADER_H + HEADER_GAP + 8 + px(5),
+                        px: px(5),
+                        anchor: Anchor::Start,
+                        invert: true, // 黑底白字条
+                    });
+                }
             }
             Block::Card(item) => {
                 let name = if item.name.is_empty() {
@@ -454,8 +237,33 @@ pub fn render_svg(data: &[StockData], width: i32, height: i32, view: &str, page:
                 } else {
                     y + name_dy + 2 * name_px + name_px / 3
                 };
-                let (pts, ref_y) = spark_points(item, large, sp_x, y + sp_dy, sp_w, sp_h);
-                let (price_s, chg_s) = stock_strings(item.price, item.change, item.pct);
+                let (pts, ref_y) = if layer == "base" {
+                    (String::new(), None)
+                } else {
+                    spark_points(item, large, sp_x, y + sp_dy, sp_w, sp_h)
+                };
+                let (price_s, chg_s) = if layer == "base" {
+                    (String::new(), String::new())
+                } else {
+                    stock_strings(item.price, item.change, item.pct)
+                };
+                // sprite 坐标与模板 full 层的 <text> 逐项对齐（x/y/字号/对齐）
+                if want_static {
+                    let nx = MARGIN_X + 15;
+                    let ny = y + name_dy;
+                    texts.push(BlitText { s: l1.clone(), x: nx, y: ny + name_px, px: name_px, anchor: Anchor::Start, invert: false });
+                    if !l2.is_empty() {
+                        texts.push(BlitText {
+                            s: l2.clone(),
+                            x: nx,
+                            y: ny + 2 * name_px + name_px / 3,
+                            px: name_px,
+                            anchor: Anchor::Start,
+                            invert: false,
+                        });
+                    }
+                    texts.push(BlitText { s: item.code.clone(), x: nx, y: code_y + code_px, px: code_px, anchor: Anchor::Start, invert: false });
+                }
                 blocks.push(CtxBlock {
                     is_header: false,
                     group: String::new(),
@@ -500,9 +308,32 @@ pub fn render_svg(data: &[StockData], width: i32, height: i32, view: &str, page:
         page_text.clear();
     }
 
+    let status_text = crate::kindle::format_status_bar();
+    if want_static {
+        if !page_text.is_empty() {
+            texts.push(BlitText {
+                s: page_text.clone(),
+                x: width / 2,
+                y: height - 40 + px(4),
+                px: px(4),
+                anchor: Anchor::Middle,
+                invert: false,
+            });
+        }
+        texts.push(BlitText {
+            s: "Swipe H: switch Tab | Swipe V: flip | Tap [X] exit".to_string(),
+            x: MARGIN_X,
+            y: height - 24 + px(4),
+            px: px(4),
+            anchor: Anchor::Start,
+            invert: false,
+        });
+    }
+
     let ctx = Screen {
         w: width,
         h: height,
+        layer,
         font_family: &fontset().family,
         title_px: px(8),
         mode_tag: &mode_tag,
@@ -517,168 +348,26 @@ pub fn render_svg(data: &[StockData], width: i32, height: i32, view: &str, page:
         blocks,
         page_text,
         status_px: px(4),
-        status_text: crate::kindle::format_status_bar(),
+        status_text,
         footer_hint: "Swipe H: switch Tab | Swipe V: flip | Tap [X] exit",
     };
-    env().get_template("screen").unwrap().render(&ctx).unwrap()
+    (env().get_template("screen").unwrap().render(&ctx).unwrap(), texts)
 }
 
-static FONTDB: OnceLock<FontSet> = OnceLock::new();
-
-struct FontSet {
-    db: std::sync::Arc<resvg::usvg::fontdb::Database>,
-    // 明确指定覆盖 CJK 的 family，避免 sans-serif 命中纯西文字库导致汉字消失
-    family: String,
-}
-
-fn is_font_file(p: &std::path::Path) -> bool {
-    matches!(
-        p.extension()
-            .and_then(|x| x.to_str())
-            .map(|s| s.to_lowercase())
-            .as_deref(),
-        Some("ttf" | "otf" | "ttc")
-    )
-}
-
-fn scan_fonts(db: &mut resvg::usvg::fontdb::Database, dir: &str, depth: usize, to_memory: bool) {
-    if depth > 4 {
-        return;
+static BASE: std::sync::LazyLock<
+    std::sync::Mutex<
+        std::collections::HashMap<(i32, i32, String, String, usize, u64), BaseEntry>,
+    >,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+fn stocks_fp(data: &[StockData]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    data.len().hash(&mut h);
+    for d in data {
+        d.code.hash(&mut h);
+        d.group.hash(&mut h);
     }
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-    for e in entries.flatten() {
-        let p = e.path();
-        if p.is_dir() {
-            scan_fonts(db, &p.to_string_lossy(), depth + 1, to_memory);
-            continue;
-        }
-        // 跳过 macOS 传过来的 AppleDouble 垃圾（._*.ttf 不是字库）
-        if p.file_name()
-            .and_then(|n| n.to_str())
-            .map(|n| n.starts_with("._") || n.starts_with('.'))
-            .unwrap_or(true)
-        {
-            continue;
-        }
-        if !is_font_file(&p) {
-            continue;
-        }
-        if to_memory {
-            // A9 上反复 mmap/读文件是 parse 慢的主因之一
-            match std::fs::read(&p) {
-                Ok(data) => {
-                    crate::dlog!(
-                        "[font] memory-loaded {} ({}KB)",
-                        p.display(),
-                        data.len() / 1024
-                    );
-                    db.load_font_source(resvg::usvg::fontdb::Source::Binary(std::sync::Arc::new(
-                        data,
-                    )));
-                }
-                Err(_) => {
-                    db.load_font_file(&p).ok();
-                }
-            }
-        } else if db.load_font_file(&p).is_ok() {
-            crate::dlog!("[font] loaded {}", p.display());
-        }
-    }
-}
-
-fn fontset() -> &'static FontSet {
-    FONTDB.get_or_init(|| {
-        let mut db = resvg::usvg::fontdb::Database::new();
-        for p in [
-            "/mnt/us/extensions/kkanpan/font.ttf",
-            "/mnt/us/extensions/kkanpan/font.otf",
-            "font.ttf",
-            "font.otf",
-        ] {
-            if std::path::Path::new(p).exists() {
-                db.load_font_file(p).ok();
-            }
-        }
-        scan_fonts(&mut db, "/mnt/us/fonts", 0, true);
-        for d in ["/usr/java/lib/fonts", "/usr/share/fonts", "/opt"] {
-            scan_fonts(&mut db, d, 0, false);
-        }
-        db.load_system_fonts();
-        eprintln!("[font] {} faces total", db.len());
-        // 选 family：固件 STHeiti/STSong 又小又快（文泉驿十几 MB，A9 上 shaping 慢），
-        // 缺字时 usvg 会按字符 fallback 到其它已加载字库，不会变豆腐块
-        let faces: Vec<_> = db.faces().collect();
-        let fam_of = |f: &&resvg::usvg::fontdb::FaceInfo| {
-            f.families
-                .first()
-                .map(|(s, _)| s.clone())
-                .unwrap_or_default()
-        };
-        let exact = ["STHeitiMedium", "STSongMedium", "STHeiti", "STSong"];
-        let face = exact
-            .iter()
-            .find_map(|w| faces.iter().find(|f| &fam_of(f) == w));
-        let pick = |keys: &[&str]| {
-            faces.iter().find(|f| {
-                let n = f
-                    .families
-                    .first()
-                    .map(|(s, _)| s.to_lowercase())
-                    .unwrap_or_default();
-                keys.iter().any(|k| n.contains(k))
-            })
-        };
-        let face = face
-            .or_else(|| {
-                pick(&[
-                    "stheiti", "stsong", "song", "kai", "hei", "noto", "droid", "wenquan", "uming",
-                    "ukai", "cjk", "pingfang", "han",
-                ])
-            })
-            .or_else(|| faces.first());
-        let family = face
-            .and_then(|f| f.families.first().map(|(s, _)| s.clone()))
-            .unwrap_or_else(|| "sans-serif".to_string());
-        eprintln!("[font] using family: {family}");
-        FontSet {
-            db: std::sync::Arc::new(db),
-            family,
-        }
-    })
-}
-
-pub fn render_pixmap(svg: &str) -> resvg::tiny_skia::Pixmap {
-    let fs = fontset();
-    let mut opt = resvg::usvg::Options::default();
-    opt.fontdb = fs.db.clone();
-    let tree = resvg::usvg::Tree::from_str(svg, &opt).expect("svg parse");
-    let size = tree.size();
-    let (w, h) = (size.width() as u32, size.height() as u32);
-    let mut pix = resvg::tiny_skia::Pixmap::new(w, h).expect("pixmap");
-    resvg::render(
-        &tree,
-        resvg::tiny_skia::Transform::identity(),
-        &mut pix.as_mut(),
-    );
-    pix
-}
-
-pub fn pixmap_to_gray(pix: &resvg::tiny_skia::Pixmap) -> Vec<u8> {
-    // 白底 premultiplied 展开：out = src + 255 - a，精确无损；
-    // 亮度系数和 256，用位移代替除法；全程无分支，LLVM 可向量化
-    pix.data()
-        .chunks_exact(4)
-        .map(|p| {
-            let a = p[3] as u32;
-            let r = p[0] as u32 + 255 - a;
-            let g = p[1] as u32 + 255 - a;
-            let b = p[2] as u32 + 255 - a;
-            ((r * 77 + g * 150 + b * 29) >> 8) as u8
-        })
-        .collect()
+    h.finish()
 }
 
 pub fn render_gray_page(
@@ -689,29 +378,43 @@ pub fn render_gray_page(
     page: usize,
 ) -> Vec<u8> {
     let t0 = std::time::Instant::now();
-    let svg = render_svg(data, width, height, view, page);
-    let t_tpl = t0.elapsed();
-    let fs = fontset();
-    let mut opt = resvg::usvg::Options::default();
-    opt.fontdb = fs.db.clone();
-    let tree = resvg::usvg::Tree::from_str(&svg, &opt).expect("svg parse");
-    let t_parse = t0.elapsed() - t_tpl;
-    let size = tree.size();
-    let mut pix =
-        resvg::tiny_skia::Pixmap::new(size.width() as u32, size.height() as u32).expect("pixmap");
-    resvg::render(
-        &tree,
-        resvg::tiny_skia::Transform::identity(),
-        &mut pix.as_mut(),
-    );
-    let t_raster = t0.elapsed() - t_tpl - t_parse;
-    let gray = pixmap_to_gray(&pix);
-    let t_gray = t0.elapsed() - t_tpl - t_parse - t_raster;
-    let texts = svg.matches("<text").count();
+    let style = crate::input::style_mode().as_str().to_string();
+    // base 命中则零 parse/raster；未命中才渲染一次并缓存（RGBA+灰度双份）
+    let t_base0 = std::time::Instant::now();
+    let mut base = BASE.lock().unwrap();
+    if base.len() >= 8 {
+        base.clear();
+    }
+    let key = (width, height, view.to_string(), style, page, stocks_fp(data));
+    let hit = base.contains_key(&key);
+    let be = base.entry(key).or_insert_with(|| {
+        let (bsvg, base_texts) = render_svg_layer(data, width, height, view, page, "base");
+        let btree = parse_tree(&bsvg);
+        let size = btree.size();
+        let mut pix = resvg::tiny_skia::Pixmap::new(size.width() as u32, size.height() as u32)
+            .expect("pixmap");
+        pix.fill(resvg::tiny_skia::Color::WHITE);
+        render_tree_into(&btree, &mut pix);
+        for t in &base_texts {
+            blit_text(&mut pix, t);
+        }
+        let mut gray = Vec::new();
+        pixmap_to_gray_into(&pix, &mut gray);
+        BaseEntry { pix, gray }
+    });
+    let t_base = t_base0.elapsed();
+    // 灰度域合成：1.5MB base 灰度快拷 + tile 波形 + 灰度 blit，无全屏 RGBA 拷贝
+    let t_dyn0 = std::time::Instant::now();
+    let mut gray = be.gray.clone();
+    let (tiles, blits) = compose_dynamic(&be.pix, &mut gray, data, width, height, view, page);
+    let t_dyn = t_dyn0.elapsed();
+    drop(base);
     crate::dlog!(
-        "[render] page {page}: tpl={}ms parse={}ms raster={}ms gray={}ms total={}ms (svg {}B, {texts} texts)",
-        t_tpl.as_millis(), t_parse.as_millis(), t_raster.as_millis(),
-        t_gray.as_millis(), t0.elapsed().as_millis(), svg.len(),
+        "[render] page {page}: base={}{}ms dyn={}ms total={}ms ({tiles} tiles, {blits} blits)",
+        if hit { "hit+" } else { "miss+" },
+        t_base.as_millis(),
+        t_dyn.as_millis(),
+        t0.elapsed().as_millis(),
     );
     gray
 }
@@ -719,4 +422,94 @@ pub fn render_gray_page(
 pub fn render_gray(data: &[StockData], width: i32, height: i32, view: &str) -> Vec<u8> {
     let total = total_pages(data, height, view).max(1);
     render_gray_page(data, width, height, view, crate::input::clamp_page(total))
+}
+
+#[cfg(test)]
+mod render_tests {
+    use super::{render_svg_layer, StockData};
+
+    fn sample() -> Vec<StockData> {
+        vec![StockData {
+            code: "sh600000".to_string(),
+            name: "浦发银行".to_string(),
+            group: "a-share".to_string(),
+            price: 10.26,
+            change: 0.12,
+            pct: 1.18,
+            prev: 10.14,
+            prices: vec![10.10, 10.20, 10.26],
+            timestamps: vec![],
+            regular_start: 0,
+            regular_end: 0,
+            chart_prev_close: 0.0,
+        }]
+    }
+
+    #[test]
+    fn spark_decimated_keeps_endpoints() {
+        let mut d = sample().pop().unwrap();
+        d.prices = (0..300).map(|i| 10.0 + i as f64 * 0.01).collect();
+        let (pts, _) = super::spark_points(&d, false, 240, 100, 480, 63);
+        let n = if pts.is_empty() { 0 } else { pts.split(' ').count() };
+        assert!(n <= 121 && n >= 100, "n={n}");
+        let first_x: i32 = pts.split([' ', ',']).next().unwrap().parse().unwrap();
+        assert_eq!(first_x, 242);
+    }
+
+    #[test]
+    fn layers_split_static_dynamic() {
+        crate::input::init_state("ALL");
+        let d = sample();
+        let (full, _) = render_svg_layer(&d, 1072, 1448, "ALL", 0, "full");
+        let (base, base_texts) = render_svg_layer(&d, 1072, 1448, "ALL", 0, "base");
+        // full 含全部文字；base 的 SVG 里无 <text>，静态字走 blit；动态字由 compose 直 blit
+        assert!(full.contains("KKANPAN") && full.contains("10.26") && full.contains("浦发银行"));
+        assert!(!base.contains("<text"));
+        assert!(base_texts.iter().any(|t| t.s.contains("浦发银行")));
+    }
+
+    #[test]
+    fn sparkline_draws_dark_pixels() {
+        let mut d = sample().pop().unwrap();
+        d.prices = (0..200).map(|i| 10.0 + (i as f64 * 0.3).sin()).collect();
+        let mut pix = resvg::tiny_skia::Pixmap::new(600, 120).expect("pixmap");
+        pix.fill(resvg::tiny_skia::Color::WHITE);
+        crate::gray::draw_sparkline(&mut pix, &d, false, 10, 10, 480, 63);
+        assert!(pix.data().chunks_exact(4).any(|p| p[0] < 128));
+    }
+
+    #[test]
+    fn gray_blit_writes_dark_pixels() {
+        use crate::gray::blit_text_gray;
+        use crate::text::{Anchor, BlitText};
+        let mut buf = vec![255u8; 200 * 60];
+        blit_text_gray(
+            &mut buf,
+            200,
+            &BlitText { s: "10.26".into(), x: 10, y: 40, px: 33, anchor: Anchor::Start, invert: false },
+        );
+        assert!(buf.iter().any(|&v| v < 128));
+    }
+
+    #[test]
+    fn glyph_blits_visible_pixels() {
+        use crate::text::{blit_text, sprite_for, Anchor, BlitText};
+        let sp = sprite_for('0', 33);
+        assert!(!sp.px.is_empty() && sp.w > 0 && sp.h > 0);
+        let mut pix = resvg::tiny_skia::Pixmap::new(200, 60).expect("pixmap");
+        pix.fill(resvg::tiny_skia::Color::WHITE);
+        blit_text(&mut pix, &BlitText { s: "10.26".into(), x: 10, y: 40, px: 33, anchor: Anchor::Start, invert: false });
+        assert!(pix.data().iter().any(|&v| v < 128));
+    }
+
+    #[test]
+    fn inverted_blits_white_on_black() {
+        // 表头条/选中 Tab：黑底上必须看到亮字，而不是糊成一片
+        use crate::text::{blit_text, Anchor, BlitText};
+        let mut pix = resvg::tiny_skia::Pixmap::new(200, 60).expect("pixmap");
+        pix.fill(resvg::tiny_skia::Color::BLACK);
+        blit_text(&mut pix, &BlitText { s: "A股".into(), x: 10, y: 40, px: 25, anchor: Anchor::Start, invert: true });
+        let bright = pix.data().chunks_exact(4).filter(|p| p[0] > 200).count();
+        assert!(bright > 50, "bright={bright}");
+    }
 }
