@@ -120,7 +120,7 @@ fn main() {
         match trigger.recv_timeout(std::time::Duration::from_secs(1)) {
             Ok(full) => {
                 // 切 Tab 时覆盖本地缺失的代码；切视图/风格走 GC16，同视图翻页走 DU，
-                // 每 10 次快刷全闪一次去鬼影。
+                // 每 full_flash_every 次快刷全闪一次去鬼影。
                 // 点按只读内存快照，绝不触发同步网络请求；网络只走后台 Timeout 分支
                 let view = input::view();
                 last = fetch::cached_snapshot(&view);
@@ -133,11 +133,12 @@ fn main() {
                 if !pool.contains_key(&key) {
                     pool.insert(key.clone(), render::render_gray_page(&last, width, height, &view, cur));
                 }
+                let every = config::app().full_flash_every.max(1) as usize;
                 let do_full = if full {
                     true
                 } else {
                     fast_count += 1;
-                    fast_count % 10 == 0
+                    fast_count % every == 0
                 };
                 differ.update(&disp, &pool[&key], width, height, do_full).unwrap();
             }

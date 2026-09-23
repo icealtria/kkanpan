@@ -52,10 +52,16 @@ pub struct AppConfig {
     pub default_view: String,
     #[serde(default, rename = "dimFrontlight")]
     pub dim_frontlight: bool,
+    #[serde(default = "default_full_flash_every", rename = "fullFlashEvery")]
+    pub full_flash_every: u64,
 }
 
 fn default_ttl() -> i64 {
     55
+}
+
+fn default_full_flash_every() -> u64 {
+    10
 }
 
 
