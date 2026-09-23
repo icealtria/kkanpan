@@ -19,7 +19,12 @@ fn data_changed(a: &[config::StockData], b: &[config::StockData]) -> bool {
             || (x.price - y.price).abs() > 1e-9
             || (x.change - y.change).abs() > 1e-9
             || (x.pct - y.pct).abs() > 1e-9
-            || x.prices.len() != y.prices.len()
+            || (x.prev - y.prev).abs() > 1e-9
+            || (x.chart_prev_close - y.chart_prev_close).abs() > 1e-9
+            || x.regular_start != y.regular_start
+            || x.regular_end != y.regular_end
+            || x.prices != y.prices
+            || x.timestamps != y.timestamps
     })
 }
 
@@ -178,4 +183,35 @@ fn main() {
 
     kindle::enable_coexist_mode();
     kindle::restore_frontlight();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::data_changed;
+    use crate::config::StockData;
+
+    fn snap(price: f64, last: f64) -> Vec<StockData> {
+        vec![StockData {
+            code: "sh600000".to_string(),
+            name: "浦发".to_string(),
+            group: "g".to_string(),
+            price,
+            change: 0.1,
+            pct: 1.0,
+            prev: 10.0,
+            prices: vec![10.0, 10.1, last],
+            timestamps: vec![1, 2, 3],
+            regular_start: 0,
+            regular_end: 0,
+            chart_prev_close: 0.0,
+        }]
+    }
+
+    #[test]
+    fn detects_same_length_corrections() {
+        let a = snap(10.2, 10.2);
+        assert!(!data_changed(&a, &snap(10.2, 10.2)));
+        // 同长度、尾点被修正：旧逻辑只比 len 会漏刷新
+        assert!(data_changed(&a, &snap(10.2, 10.25)));
+    }
 }
