@@ -3,14 +3,40 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 
 static VIEW: RwLock<String> = RwLock::new(String::new());
-static STYLE: RwLock<String> = RwLock::new(String::new());
+static STYLE: RwLock<StyleMode> = RwLock::new(StyleMode::Normal);
 static PAGE: Mutex<usize> = Mutex::new(0);
 static TOUCH_ON: AtomicBool = AtomicBool::new(true);
 static TRIGGER: OnceLock<mpsc::SyncSender<bool>> = OnceLock::new();
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StyleMode {
+    Normal,
+    Large,
+}
+
+impl StyleMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            StyleMode::Normal => "normal",
+            StyleMode::Large => "large",
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            StyleMode::Normal => "S",
+            StyleMode::Large => "L",
+        }
+    }
+
+    pub fn is_large(&self) -> bool {
+        *self == StyleMode::Large
+    }
+}
+
 pub fn init_state(default_view: &str) {
     *VIEW.write().unwrap() = default_view.to_string();
-    *STYLE.write().unwrap() = "normal".to_string();
+    *STYLE.write().unwrap() = StyleMode::Normal;
 }
 
 pub fn init_trigger() -> mpsc::Receiver<bool> {
@@ -41,27 +67,31 @@ pub fn set_view(mode: &str) {
     trigger_refresh();
 }
 
-pub fn style_mode() -> String {
-    STYLE.read().unwrap().clone()
+pub fn style_mode() -> StyleMode {
+    *STYLE.read().unwrap()
 }
 
 pub fn set_style(m: &str) {
-    if m != "normal" && m != "large" {
-        return;
-    }
-    *STYLE.write().unwrap() = m.to_string();
+    let mode = match m {
+        "large" => StyleMode::Large,
+        "normal" => StyleMode::Normal,
+        _ => return,
+    };
+    *STYLE.write().unwrap() = mode;
     *PAGE.lock().unwrap() = 0;
     trigger_refresh();
 }
 
-pub fn next_style() -> String {
-    let m = if style_mode() == "large" { "normal" } else { "large" }.to_string();
-    set_style(&m);
+pub fn next_style() -> StyleMode {
+    let m = if style_mode().is_large() { StyleMode::Normal } else { StyleMode::Large };
+    *STYLE.write().unwrap() = m;
+    *PAGE.lock().unwrap() = 0;
+    trigger_refresh();
     m
 }
 
 pub fn style_label() -> &'static str {
-    if style_mode() == "large" { "L" } else { "S" }
+    style_mode().label()
 }
 
 pub fn touch_enabled() -> bool {
@@ -165,7 +195,7 @@ fn handle_tap(x: i32, y: i32, sw: i32, sh: i32) {
             quit_app();
         }
         if x >= sw - 185 && x <= sw - 105 {
-            eprintln!("Style -> {}", next_style());
+            eprintln!("Style -> {}", next_style().as_str());
             return;
         }
     }
@@ -187,7 +217,7 @@ fn handle_tap(x: i32, y: i32, sw: i32, sh: i32) {
             return;
         }
         if x > sw * 2 / 3 {
-            let total = crate::render::total_pages(&crate::fetch::cached_snapshot(&view()), sh, &view()).max(1);
+            let total = crate::layout::total_pages(&crate::fetch::cached_snapshot(&view()), sh, &view()).max(1);
             if total > 1 && next_page(total) {
                 trigger_page_turn();
             }

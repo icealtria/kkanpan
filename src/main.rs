@@ -1,10 +1,13 @@
 mod config;
 mod fbink;
 mod fetch;
+mod gray;
 mod input;
 mod kindle;
+mod layout;
 mod render;
 mod server;
+mod text;
 mod util;
 
 fn data_changed(a: &[config::StockData], b: &[config::StockData]) -> bool {
@@ -74,7 +77,7 @@ fn main() {
     let mut differ = fbink::ScreenDiffer::new();
 
     // 字体磁盘加载与首轮网络 fetch 并行：隐藏预热延迟，首屏即缓存命中
-    let warmer = std::thread::spawn(render::precache_names);
+    let warmer = std::thread::spawn(text::precache_names);
     let data = fetch::refresh_data(&view0);
     warmer.join().ok();
     config::update_data_refresh_time();
@@ -109,9 +112,9 @@ fn main() {
 
     // 懒加载分页缓存：只存单页，用户翻到哪页才渲染哪页
     let mut pool: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
-    let cur = input::clamp_page(render::total_pages(&last, height, &input::view()).max(1));
+    let cur = input::clamp_page(layout::total_pages(&last, height, &input::view()).max(1));
     pool.insert(
-        page_cache_key(&input::view(), &input::style_mode(), cur, data_ver),
+        page_cache_key(&input::view(), input::style_mode().as_str(), cur, data_ver),
         gray,
     );
 
@@ -132,9 +135,9 @@ fn main() {
                 if last.is_empty() {
                     last = fetch::get_data(&view); // 仅该 View 从未拉取过时 fallback
                 }
-                let total = render::total_pages(&last, height, &view).max(1);
+                let total = layout::total_pages(&last, height, &view).max(1);
                 let cur = input::clamp_page(total);
-                let key = page_cache_key(&view, &input::style_mode(), cur, data_ver);
+                let key = page_cache_key(&view, input::style_mode().as_str(), cur, data_ver);
                 if !pool.contains_key(&key) {
                     pool.insert(key.clone(), render::render_gray_page(&last, width, height, &view, cur));
                 }
@@ -157,7 +160,7 @@ fn main() {
                     data_ver += 1;
                     pool.clear(); // 数据变了，所有视图的页面缓存统统失效
                     let view = input::view();
-                    let total = render::total_pages(&d, height, &view).max(1);
+                    let total = layout::total_pages(&d, height, &view).max(1);
                     let cur = input::clamp_page(total);
                     // 后台更新也只渲染当前停留的一页，其余页等用户翻到再懒加载
                     let gray = render::render_gray_page(&d, width, height, &view, cur);
@@ -165,7 +168,7 @@ fn main() {
                     differ
                         .update(&disp, &gray, width, height, flash_count % every == 0)
                         .unwrap();
-                    pool.insert(page_cache_key(&view, &input::style_mode(), cur, data_ver), gray);
+                    pool.insert(page_cache_key(&view, input::style_mode().as_str(), cur, data_ver), gray);
                 }
                 last = d;
             }
