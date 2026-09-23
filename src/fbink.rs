@@ -89,7 +89,9 @@ impl Display {
                 if fbink_init(fbfd, &cfg) != 0 {
                     return Err("fbink_init failed".to_string());
                 }
-                let v = std::ffi::CStr::from_ptr(fbink_version()).to_string_lossy().into_owned();
+                let v = std::ffi::CStr::from_ptr(fbink_version())
+                    .to_string_lossy()
+                    .into_owned();
                 eprintln!("[display] FBInk {v} initialized");
                 Ok(Display { fbfd })
             }
@@ -103,18 +105,33 @@ impl Display {
 
     // Kindle 上 Y 灰度 + ignore_alpha 最快
     pub fn write_gray(&self, data: &[u8], w: i32, h: i32, full: bool) -> Result<(), String> {
-        self.write_gray_mode(data, w, h, if full { WFM_GC16 } else { WFM_DU }, full)
+        self.write_gray_mode(data, w, h, if full { WFM_GC16 } else { WFM_GL16 }, full)
     }
 
-    pub fn write_gray_mode(&self, data: &[u8], w: i32, h: i32, wfm: u8, flash: bool) -> Result<(), String> {
+    pub fn write_gray_mode(
+        &self,
+        data: &[u8],
+        w: i32,
+        h: i32,
+        wfm: u8,
+        flash: bool,
+    ) -> Result<(), String> {
         #[cfg(target_os = "linux")]
         {
-            let cfg = FBInkConfig { wfm_mode: wfm, is_flashing: flash, ..Default::default() };
+            let cfg = FBInkConfig {
+                wfm_mode: wfm,
+                is_flashing: flash,
+                ..Default::default()
+            };
             // SAFETY: data 长度由调用方保证为 w*h
             let rc = unsafe {
                 fbink_print_raw_data(self.fbfd, data.as_ptr(), w, h, data.len(), 0, 0, &cfg)
             };
-            if rc < 0 { Err(format!("print_raw_data rc={rc}")) } else { Ok(()) }
+            if rc < 0 {
+                Err(format!("print_raw_data rc={rc}"))
+            } else {
+                Ok(())
+            }
         }
         #[cfg(not(target_os = "linux"))]
         {
@@ -123,10 +140,18 @@ impl Display {
         }
     }
 
-    pub fn write_gray_partial(&self, data: &[u8], stride: i32, rects: &[DirtyRect]) -> Result<(), String> {
+    pub fn write_gray_partial(
+        &self,
+        data: &[u8],
+        stride: i32,
+        rects: &[DirtyRect],
+    ) -> Result<(), String> {
         #[cfg(target_os = "linux")]
         {
-            let cfg = FBInkConfig { wfm_mode: WFM_DU, ..Default::default() };
+            let cfg = FBInkConfig {
+                wfm_mode: WFM_GL16,
+                ..Default::default()
+            };
             for r in rects {
                 let mut crop = vec![0u8; (r.w * r.h) as usize];
                 for y in 0..r.h {
@@ -137,7 +162,14 @@ impl Display {
                 // SAFETY: crop 长度精确为 w*h
                 let rc = unsafe {
                     fbink_print_raw_data(
-                        self.fbfd, crop.as_ptr(), r.w, r.h, crop.len(), r.x as i16, r.y as i16, &cfg,
+                        self.fbfd,
+                        crop.as_ptr(),
+                        r.w,
+                        r.h,
+                        crop.len(),
+                        r.x as i16,
+                        r.y as i16,
+                        &cfg,
                     )
                 };
                 if rc < 0 {
@@ -173,7 +205,6 @@ impl Drop for Display {
         }
     }
 }
-
 
 #[derive(Debug, Clone, Copy)]
 pub struct DirtyRect {
@@ -226,7 +257,12 @@ mod tests {
     #[test]
     fn merges_stacked_neighbors() {
         let v: Vec<DirtyRect> = (0..12)
-            .map(|i| DirtyRect { x: 0, y: i * 24, w: 24, h: 24 })
+            .map(|i| DirtyRect {
+                x: 0,
+                y: i * 24,
+                w: 24,
+                h: 24,
+            })
             .collect();
         assert_eq!(merge_rects(v, 15).len(), 1);
     }
@@ -234,7 +270,12 @@ mod tests {
     #[test]
     fn keeps_far_apart() {
         let v: Vec<DirtyRect> = (0..9)
-            .map(|i| DirtyRect { x: i * 200, y: 0, w: 24, h: 24 })
+            .map(|i| DirtyRect {
+                x: i * 200,
+                y: 0,
+                w: 24,
+                h: 24,
+            })
             .collect();
         assert_eq!(merge_rects(v, 15).len(), 9);
     }
@@ -243,7 +284,12 @@ mod tests {
     fn merges_price_column() {
         // 数据刷新典型：同 x 列、y 散开的价格小块 → 收成 1 个高条
         let v: Vec<DirtyRect> = (0..10)
-            .map(|i| DirtyRect { x: 840, y: 200 + i * 103, w: 192, h: 48 })
+            .map(|i| DirtyRect {
+                x: 840,
+                y: 200 + i * 103,
+                w: 192,
+                h: 48,
+            })
             .collect();
         let m = merge_rects(v, 15);
         assert_eq!(m.len(), 1);
@@ -261,11 +307,20 @@ pub struct ScreenDiffer {
 impl ScreenDiffer {
     pub fn new() -> Self {
         // 块 24px：碎片 rect 少一个量级；碎了就整屏 DU，不逐个 ioctl
-        ScreenDiffer { prev: None, w: 0, h: 0, block: 24 }
+        ScreenDiffer {
+            prev: None,
+            w: 0,
+            h: 0,
+            block: 24,
+        }
     }
 
     fn find_dirty(&self, old: &[u8], new: &[u8], w: i32, h: i32) -> Vec<DirtyRect> {
-        let (bs, cols, rows) = (self.block, (w + self.block - 1) / self.block, (h + self.block - 1) / self.block);
+        let (bs, cols, rows) = (
+            self.block,
+            (w + self.block - 1) / self.block,
+            (h + self.block - 1) / self.block,
+        );
         let mut dirty = vec![false; (cols * rows) as usize];
         let mut any = false;
         for by in 0..rows {
@@ -327,7 +382,14 @@ impl ScreenDiffer {
         merge_rects(out, 15)
     }
 
-    pub fn update(&mut self, disp: &Display, gray: &[u8], w: i32, h: i32, full: bool) -> Result<(), String> {
+    pub fn update(
+        &mut self,
+        disp: &Display,
+        gray: &[u8],
+        w: i32,
+        h: i32,
+        full: bool,
+    ) -> Result<(), String> {
         if full || self.prev.is_none() {
             disp.write_gray(gray, w, h, true)?;
             self.prev = Some(gray.to_vec());
@@ -351,7 +413,11 @@ impl ScreenDiffer {
         }
         let total = (w * h) as f64;
         let dirty: f64 = rects.iter().map(|r| (r.w * r.h) as f64).sum();
-        crate::dlog!("[diff] {} rects, {:.1}% changed", rects.len(), dirty / total * 100.0);
+        crate::dlog!(
+            "[diff] {} rects, {:.1}% changed",
+            rects.len(),
+            dirty / total * 100.0
+        );
         // 碎片多时逐个 ioctl 发几百轮 e-ink 刷新，不如一次整屏 GL16（低闪，比 DU 干净得多）
         if dirty / total > 0.40 || rects.len() > 15 {
             disp.write_gray_mode(gray, w, h, WFM_GL16, false)?;
