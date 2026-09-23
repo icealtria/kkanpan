@@ -62,6 +62,8 @@ fn main() {
     input::init_state(&view0);
     let trigger = input::init_trigger();
     eprintln!("Starting kkanpan (view={view0})...");
+    // 编译期自检：RUSTFLAGS 的 +neon 是否透过 zigbuild 生效，gray 快慢全看它
+    eprintln!("[simd] neon={}", cfg!(target_feature = "neon"));
 
     kindle::disable_coexist_mode();
     if config::app().dim_frontlight {

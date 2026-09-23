@@ -145,6 +145,7 @@ struct CtxBlock {
 struct Screen<'a> {
     w: i32,
     h: i32,
+    layer: &'a str, // "full" | "base" | "dyn"
     font_family: &'a str,
     title_px: i32,
     mode_tag: &'a str,
@@ -262,6 +263,24 @@ pub fn precache_names() {
         split_name(name, px(8), 210 - (MARGIN_X + 15) - 5);
         split_name(name, px(6), 240 - (MARGIN_X + 15) - 5);
     }
+    precache_glyphs();
+}
+
+/// 高频字形预热：数字/符号 × 价格字号（每帧都画，首刷前备好）；
+/// 汉字/字母走懒加载（首次 base 渲染时顺带备好，常驻缓存）
+pub fn precache_glyphs() {
+    for px in [px(5), px(6), px(8), px(9)] {
+        for ch in "0123456789.+-()% ▲▼/".chars() {
+            sprite_for(ch, px);
+        }
+    }
+    for s in config::stocks() {
+        let name = if s.name.is_empty() { &s.code } else { &s.name };
+        for ch in name.chars().chain(s.group.chars()) {
+            sprite_for(ch, px(8));
+            sprite_for(ch, px(6));
+        }
+    }
 }
 
 fn split_name_uncached(name: &str, font_px: i32, max_w: i32) -> (String, String) {
@@ -323,9 +342,16 @@ fn spark_points(
     } else {
         None
     };
-    let mut pts = String::with_capacity(prices.len() * 12);
+    let n = prices.len();
+    // 抽稀：480px 宽画 240 点=每像素 2 点，纯属过采样；120 点仍 4px 一点，折线视觉一致，
+    // 但 points 字符串减半，tpl/parse/raster 三处全受益。x 仍按原下标映射，位置不变
+    let stride = n.div_ceil(120).max(1);
+    let mut pts = String::with_capacity(n.div_ceil(stride) * 12 + 8);
     use std::fmt::Write as _;
     for (i, &p) in prices.iter().enumerate() {
+        if i % stride != 0 && i + 1 != n {
+            continue;
+        }
         let x = if is_yahoo && item.timestamps.len() == prices.len() {
             let total = (item.regular_end - item.regular_start).max(1) as f64;
             sx + 2
@@ -336,7 +362,7 @@ fn spark_points(
             sx + 2 + (i as f64 * (sw - 4) as f64 / total) as i32
         };
         let y = sy + 2 + ((mx - p) * (sh - 4) as f64 / rng) as i32;
-        if i > 0 {
+        if !pts.is_empty() {
             pts.push(' ');
         }
         let _ = write!(&mut pts, "{x},{y}");
@@ -345,6 +371,143 @@ fn spark_points(
 }
 
 static TPL: OnceLock<Environment<'static>> = OnceLock::new();
+
+// ---- 文字 sprite：SVG 只画图形，所有文字启动预渲染、刷新时 blit ----
+// Sprite 几何统一：画布 H=3*px、基线在 2*px 处，只裁左右白边、保留全高，
+// 不同字形基线天然对齐；dx=内容左 edge 相对笔尖，dy=基线相对内容顶
+#[derive(Clone)]
+struct Sprite {
+    w: i32,
+    h: i32,
+    dx: i32,
+    dy: i32,
+    px: Vec<u8>, // 白底灰度，255=透明可跳
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Anchor {
+    Start,
+    Middle,
+    End,
+}
+
+struct BlitText {
+    s: String,
+    x: i32,
+    y: i32, // 基线（对齐 SVG text 的 y）
+    px: i32,
+    anchor: Anchor,
+}
+
+static SPRITES: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<(char, i32), Sprite>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+static ADVS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<(char, i32), i32>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+fn advance_for(ch: char, px: i32) -> i32 {
+    *ADVS
+        .lock()
+        .unwrap()
+        .entry((ch, px))
+        .or_insert_with(|| char_widths(&ch.to_string(), px).into_iter().next().unwrap_or(px / 2))
+}
+
+fn sprite_for(ch: char, px: i32) -> Sprite {
+    SPRITES
+        .lock()
+        .unwrap()
+        .entry((ch, px))
+        .or_insert_with(|| render_glyph(ch, px))
+        .clone()
+}
+
+fn render_glyph(ch: char, px: i32) -> Sprite {
+    let empty = Sprite { w: 0, h: 0, dx: 0, dy: 0, px: vec![] };
+    if ch == ' ' {
+        return empty;
+    }
+    let (cw, chh, base) = (px * 4, px * 3, px * 2);
+    let svg = format!(
+        "<svg width=\"{cw}\" height=\"{chh}\" xmlns=\"http://www.w3.org/2000/svg\"><text x=\"{px}\" y=\"{base}\" font-size=\"{px}\" fill=\"black\" font-family=\"{}\">{ch}</text></svg>",
+        fontset().family,
+    );
+    let tree = parse_tree(&svg);
+    let mut pix = resvg::tiny_skia::Pixmap::new(cw as u32, chh as u32).expect("pixmap");
+    pix.fill(resvg::tiny_skia::Color::WHITE);
+    render_tree_into(&tree, &mut pix);
+    let data = pix.data();
+    let at = |x: i32, y: i32| data[(y * cw + x) as usize * 4];
+    let mut cols: Vec<i32> = vec![];
+    let mut top = chh;
+    let mut bottom = -1;
+    for y in 0..chh {
+        for x in 0..cw {
+            if at(x, y) != 255 {
+                cols.push(x);
+                if y < top {
+                    top = y;
+                }
+                if y > bottom {
+                    bottom = y;
+                }
+            }
+        }
+    }
+    if bottom < 0 {
+        return empty;
+    }
+    let (x0, x1) = (*cols.iter().min().unwrap(), *cols.iter().max().unwrap());
+    let mut out = Vec::with_capacity(((x1 - x0 + 1) * (bottom - top + 1)) as usize);
+    for y in top..=bottom {
+        for x in x0..=x1 {
+            let p = &data[(y * cw + x) as usize * 4..];
+            let a = p[3] as u32;
+            let r = p[0] as u32 + 255 - a;
+            let g = p[1] as u32 + 255 - a;
+            let b = p[2] as u32 + 255 - a;
+            out.push(((r * 77 + g * 150 + b * 29) >> 8) as u8);
+        }
+    }
+    Sprite { w: x1 - x0 + 1, h: bottom - top + 1, dx: x0 - px, dy: base - top, px: out }
+}
+
+fn blit_text(canvas: &mut resvg::tiny_skia::Pixmap, t: &BlitText) {
+    if t.s.is_empty() {
+        return;
+    }
+    let advs: Vec<i32> = t.s.chars().map(|ch| advance_for(ch, t.px)).collect();
+    let total: i32 = advs.iter().sum();
+    let mut pen = match t.anchor {
+        Anchor::Start => t.x,
+        Anchor::Middle => t.x - total / 2,
+        Anchor::End => t.x - total,
+    };
+    let (cw, chh) = (canvas.width() as i32, canvas.height() as i32);
+    let data = canvas.data_mut();
+    for (ch, adv) in t.s.chars().zip(advs) {
+        let sp = sprite_for(ch, t.px);
+        if !sp.px.is_empty() {
+            let (x0, y0) = (pen + sp.dx, t.y - sp.dy);
+            let (xa, xb) = (x0.max(0), (x0 + sp.w).min(cw));
+            let (ya, yb) = (y0.max(0), (y0 + sp.h).min(chh));
+            for yy in ya..yb {
+                let srow = (yy - y0) * sp.w;
+                let drow = yy * cw * 4;
+                for xx in xa..xb {
+                    let v = sp.px[(srow + (xx - x0)) as usize];
+                    if v != 255 {
+                        let o = (drow + xx * 4) as usize;
+                        data[o] = v;
+                        data[o + 1] = v;
+                        data[o + 2] = v;
+                        data[o + 3] = 255;
+                    }
+                }
+            }
+        }
+        pen += adv;
+    }
+}
 
 fn env() -> &'static Environment<'static> {
     TPL.get_or_init(|| {
@@ -359,6 +522,21 @@ fn env() -> &'static Environment<'static> {
 }
 
 pub fn render_svg(data: &[StockData], width: i32, height: i32, view: &str, page: usize) -> String {
+    render_svg_layer(data, width, height, view, page, "full").0
+}
+
+fn render_svg_layer(
+    data: &[StockData],
+    width: i32,
+    height: i32,
+    view: &str,
+    page: usize,
+    layer: &str,
+) -> (String, Vec<BlitText>) {
+    // full 只给 server 预览用，texts 用不上；base 收静态字，dyn 收动态字
+    let want_static = layer == "base";
+    let want_dyn = layer == "dyn";
+    let mut texts: Vec<BlitText> = vec![];
     let style = crate::input::style_mode();
     let large = style == "large";
     let (eff, is_auto) = config::effective_group(view);
@@ -384,6 +562,29 @@ pub fn render_svg(data: &[StockData], width: i32, height: i32, view: &str, page:
             selected: view == m,
         })
         .collect();
+
+    if want_static {
+        let tpx = px(6);
+        texts.push(BlitText { s: "KKANPAN".into(), x: 30, y: 16 + px(8), px: px(8), anchor: Anchor::Start });
+        texts.push(BlitText { s: mode_tag.clone(), x: width - 460, y: 20 + tpx, px: tpx, anchor: Anchor::Start });
+        texts.push(BlitText {
+            s: (if large { "L" } else { "S" }).to_string(),
+            x: width - 185 + 40,
+            y: 10 + 8 + tpx,
+            px: tpx,
+            anchor: Anchor::Middle,
+        });
+        texts.push(BlitText { s: "X".into(), x: width - 95 + 32, y: 40, px: 25, anchor: Anchor::Middle });
+        for t in &tabs {
+            texts.push(BlitText {
+                s: t.key.to_string(),
+                x: t.x + t.w / 2,
+                y: t.y + 12 + tpx,
+                px: tpx,
+                anchor: Anchor::Middle,
+            });
+        }
+    }
 
     let pages = paginate(data, height, view);
     let total = pages.len();
@@ -470,6 +671,15 @@ pub fn render_svg(data: &[StockData], width: i32, height: i32, view: &str, page:
                     chg_px: 0,
                 });
                 y += HEADER_H;
+                if want_static {
+                    texts.push(BlitText {
+                        s: format!("[ {group} ]"),
+                        x: MARGIN_X + 15,
+                        y: y - HEADER_H + HEADER_GAP + 8 + px(5),
+                        px: px(5),
+                        anchor: Anchor::Start,
+                    });
+                }
             }
             Block::Card(item) => {
                 let name = if item.name.is_empty() {
@@ -478,14 +688,47 @@ pub fn render_svg(data: &[StockData], width: i32, height: i32, view: &str, page:
                     item.name.clone()
                 };
                 let max_w = sp_x - (MARGIN_X + 15) - 5;
-                let (l1, l2) = split_name(&name, name_px, max_w);
+                // base/full 才排名字，dyn 只算坐标；反之 spark/价格只在 dyn/full 算
+                let (l1, l2) = if layer == "dyn" {
+                    (String::new(), String::new())
+                } else {
+                    split_name(&name, name_px, max_w)
+                };
                 let code_y = if l2.is_empty() {
                     y + code_dy
                 } else {
                     y + name_dy + 2 * name_px + name_px / 3
                 };
-                let (pts, ref_y) = spark_points(item, large, sp_x, y + sp_dy, sp_w, sp_h);
-                let (price_s, chg_s) = stock_strings(item.price, item.change, item.pct);
+                let (pts, ref_y) = if layer == "base" {
+                    (String::new(), None)
+                } else {
+                    spark_points(item, large, sp_x, y + sp_dy, sp_w, sp_h)
+                };
+                let (price_s, chg_s) = if layer == "base" {
+                    (String::new(), String::new())
+                } else {
+                    stock_strings(item.price, item.change, item.pct)
+                };
+                // sprite 坐标与模板 full 层的 <text> 逐项对齐（x/y/字号/对齐）
+                if want_static {
+                    let nx = MARGIN_X + 15;
+                    let ny = y + name_dy;
+                    texts.push(BlitText { s: l1.clone(), x: nx, y: ny + name_px, px: name_px, anchor: Anchor::Start });
+                    if !l2.is_empty() {
+                        texts.push(BlitText {
+                            s: l2.clone(),
+                            x: nx,
+                            y: ny + 2 * name_px + name_px / 3,
+                            px: name_px,
+                            anchor: Anchor::Start,
+                        });
+                    }
+                    texts.push(BlitText { s: item.code.clone(), x: nx, y: code_y + code_px, px: code_px, anchor: Anchor::Start });
+                }
+                if want_dyn {
+                    texts.push(BlitText { s: price_s.clone(), x: width - 45, y: y + pr_dy + pr_px, px: pr_px, anchor: Anchor::End });
+                    texts.push(BlitText { s: chg_s.clone(), x: width - 45, y: y + ch_dy + ch_px, px: ch_px, anchor: Anchor::End });
+                }
                 blocks.push(CtxBlock {
                     is_header: false,
                     group: String::new(),
@@ -530,9 +773,39 @@ pub fn render_svg(data: &[StockData], width: i32, height: i32, view: &str, page:
         page_text.clear();
     }
 
+    let status_text = crate::kindle::format_status_bar();
+    if want_static {
+        if !page_text.is_empty() {
+            texts.push(BlitText {
+                s: page_text.clone(),
+                x: width / 2,
+                y: height - 40 + px(4),
+                px: px(4),
+                anchor: Anchor::Middle,
+            });
+        }
+        texts.push(BlitText {
+            s: "Swipe H: switch Tab | Swipe V: flip | Tap [X] exit".to_string(),
+            x: MARGIN_X,
+            y: height - 24 + px(4),
+            px: px(4),
+            anchor: Anchor::Start,
+        });
+    }
+    if want_dyn {
+        texts.push(BlitText {
+            s: status_text.clone(),
+            x: width - MARGIN_X,
+            y: height - 24 + px(4),
+            px: px(4),
+            anchor: Anchor::End,
+        });
+    }
+
     let ctx = Screen {
         w: width,
         h: height,
+        layer,
         font_family: &fontset().family,
         title_px: px(8),
         mode_tag: &mode_tag,
@@ -547,10 +820,10 @@ pub fn render_svg(data: &[StockData], width: i32, height: i32, view: &str, page:
         blocks,
         page_text,
         status_px: px(4),
-        status_text: crate::kindle::format_status_bar(),
+        status_text,
         footer_hint: "Swipe H: switch Tab | Swipe V: flip | Tap [X] exit",
     };
-    env().get_template("screen").unwrap().render(&ctx).unwrap()
+    (env().get_template("screen").unwrap().render(&ctx).unwrap(), texts)
 }
 
 static FONTDB: OnceLock<FontSet> = OnceLock::new();
@@ -686,6 +959,21 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
+fn parse_tree(svg: &str) -> resvg::usvg::Tree {
+    let fs = fontset();
+    let mut opt = resvg::usvg::Options::default();
+    opt.fontdb = fs.db.clone();
+    resvg::usvg::Tree::from_str(svg, &opt).expect("svg parse")
+}
+
+fn render_tree_into(tree: &resvg::usvg::Tree, pix: &mut resvg::tiny_skia::Pixmap) {
+    resvg::render(
+        tree,
+        resvg::tiny_skia::Transform::identity(),
+        &mut pix.as_mut(),
+    );
+}
+
 fn render_tree(tree: &resvg::usvg::Tree) {
     PIXMAP.with(|cell| {
         let (w, h) = (tree.size().width() as u32, tree.size().height() as u32);
@@ -696,15 +984,12 @@ fn render_tree(tree: &resvg::usvg::Tree) {
         }
         let pix = slot.as_mut().expect("pixmap");
         pix.fill(resvg::tiny_skia::Color::WHITE);
-        resvg::render(tree, resvg::tiny_skia::Transform::identity(), &mut pix.as_mut());
+        render_tree_into(tree, pix);
     });
 }
 
 pub fn render_pixmap(svg: &str) -> resvg::tiny_skia::Pixmap {
-    let fs = fontset();
-    let mut opt = resvg::usvg::Options::default();
-    opt.fontdb = fs.db.clone();
-    let tree = resvg::usvg::Tree::from_str(svg, &opt).expect("svg parse");
+    let tree = parse_tree(svg);
     render_tree(&tree);
     PIXMAP.with(|cell| cell.borrow().as_ref().expect("pixmap").clone())
 }
@@ -739,6 +1024,26 @@ pub fn pixmap_to_gray(pix: &resvg::tiny_skia::Pixmap) -> Vec<u8> {
     out
 }
 
+// 静态层缓存：Tab/表头/股票名只与 (w,h,view,style,page) 有关，数据刷新不失效；
+// 命中后每帧只剩动态小 SVG（价格/波形/状态）的 parse+raster
+static BASE: std::sync::LazyLock<
+    std::sync::Mutex<
+        std::collections::HashMap<(i32, i32, String, String, usize, u64), resvg::tiny_skia::Pixmap>,
+    >,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+// 成员指纹：空数据→有数据（或股票增减）时 base 版式会变，必须换 key，否则复用无卡片底图
+fn stocks_fp(data: &[StockData]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    data.len().hash(&mut h);
+    for d in data {
+        d.code.hash(&mut h);
+        d.group.hash(&mut h);
+    }
+    h.finish()
+}
+
 pub fn render_gray_page(
     data: &[StockData],
     width: i32,
@@ -747,23 +1052,70 @@ pub fn render_gray_page(
     page: usize,
 ) -> Vec<u8> {
     let t0 = std::time::Instant::now();
-    let svg = render_svg(data, width, height, view, page);
+    let style = crate::input::style_mode();
+    let (svg, dyn_texts) = render_svg_layer(data, width, height, view, page, "dyn");
     let t_tpl = t0.elapsed();
-    let fs = fontset();
-    let mut opt = resvg::usvg::Options::default();
-    opt.fontdb = fs.db.clone();
-    let tree = resvg::usvg::Tree::from_str(&svg, &opt).expect("svg parse");
+    let tree = parse_tree(&svg);
     let t_parse = t0.elapsed() - t_tpl;
-    render_tree(&tree);
-    let t_raster = t0.elapsed() - t_tpl - t_parse;
+    // base 命中则零 parse/raster；未命中才渲染一次并缓存
+    let t_base0 = std::time::Instant::now();
+    let mut base = BASE.lock().unwrap();
+    if base.len() >= 8 {
+        base.clear();
+    }
+    let key = (width, height, view.to_string(), style, page, stocks_fp(data));
+    let hit = base.contains_key(&key);
+    let bp = base.entry(key).or_insert_with(|| {
+        let (bsvg, base_texts) = render_svg_layer(data, width, height, view, page, "base");
+        let btree = parse_tree(&bsvg);
+        let size = btree.size();
+        let mut pix = resvg::tiny_skia::Pixmap::new(size.width() as u32, size.height() as u32)
+            .expect("pixmap");
+        pix.fill(resvg::tiny_skia::Color::WHITE);
+        render_tree_into(&btree, &mut pix);
+        for t in &base_texts {
+            blit_text(&mut pix, t);
+        }
+        pix
+    });
+    let t_base = t_base0.elapsed();
+    // 合成到底图画布：拷 base（6MB memcpy）+ 叠动态层 + blit 动态字，全程复用线程局部 Pixmap
+    let t_dyn0 = std::time::Instant::now();
     let mut gray = Vec::new();
-    PIXMAP.with(|cell| pixmap_to_gray_into(cell.borrow().as_ref().expect("pixmap"), &mut gray));
-    let t_gray = t0.elapsed() - t_tpl - t_parse - t_raster;
-    let texts = svg.matches("<text").count();
+    let mut t_gray = std::time::Duration::ZERO;
+    let mut t_blit = std::time::Duration::ZERO;
+    PIXMAP.with(|cell| {
+        let (w, h) = (tree.size().width() as u32, tree.size().height() as u32);
+        let mut slot = cell.borrow_mut();
+        if !matches!(&*slot, Some(p) if p.width() == w && p.height() == h) {
+            *slot = Some(resvg::tiny_skia::Pixmap::new(w, h).expect("pixmap"));
+        }
+        let canvas = slot.as_mut().expect("pixmap");
+        canvas.data_mut().copy_from_slice(bp.data());
+        render_tree_into(&tree, canvas);
+        let b0 = std::time::Instant::now();
+        for t in &dyn_texts {
+            blit_text(canvas, t);
+        }
+        t_blit = b0.elapsed();
+        let g0 = std::time::Instant::now();
+        pixmap_to_gray_into(canvas, &mut gray);
+        t_gray = g0.elapsed();
+    });
+    drop(base);
+    let t_dyn = t_dyn0.elapsed();
     crate::dlog!(
-        "[render] page {page}: tpl={}ms parse={}ms raster={}ms gray={}ms total={}ms (svg {}B, {texts} texts)",
-        t_tpl.as_millis(), t_parse.as_millis(), t_raster.as_millis(),
-        t_gray.as_millis(), t0.elapsed().as_millis(), svg.len(),
+        "[render] page {page}: tpl={}ms base={}{}ms parse={}ms dyn={}ms blit={}ms gray={}ms total={}ms (dyn svg {}B, {} blits)",
+        t_tpl.as_millis(),
+        if hit { "hit+" } else { "miss+" },
+        t_base.as_millis(),
+        t_parse.as_millis(),
+        (t_dyn - t_gray - t_blit).as_millis(),
+        t_blit.as_millis(),
+        t_gray.as_millis(),
+        t0.elapsed().as_millis(),
+        svg.len(),
+        dyn_texts.len(),
     );
     gray
 }
@@ -771,4 +1123,63 @@ pub fn render_gray_page(
 pub fn render_gray(data: &[StockData], width: i32, height: i32, view: &str) -> Vec<u8> {
     let total = total_pages(data, height, view).max(1);
     render_gray_page(data, width, height, view, crate::input::clamp_page(total))
+}
+
+#[cfg(test)]
+mod render_tests {
+    use super::{render_svg_layer, StockData};
+
+    fn sample() -> Vec<StockData> {
+        vec![StockData {
+            code: "sh600000".to_string(),
+            name: "浦发银行".to_string(),
+            group: "a-share".to_string(),
+            price: 10.26,
+            change: 0.12,
+            pct: 1.18,
+            prev: 10.14,
+            prices: vec![10.10, 10.20, 10.26],
+            timestamps: vec![],
+            regular_start: 0,
+            regular_end: 0,
+            chart_prev_close: 0.0,
+        }]
+    }
+
+    #[test]
+    fn spark_decimated_keeps_endpoints() {
+        let mut d = sample().pop().unwrap();
+        d.prices = (0..300).map(|i| 10.0 + i as f64 * 0.01).collect();
+        let (pts, _) = super::spark_points(&d, false, 240, 100, 480, 63);
+        let n = if pts.is_empty() { 0 } else { pts.split(' ').count() };
+        assert!(n <= 121 && n >= 100, "n={n}");
+        let first_x: i32 = pts.split([' ', ',']).next().unwrap().parse().unwrap();
+        assert_eq!(first_x, 242);
+    }
+
+    #[test]
+    fn layers_split_static_dynamic() {
+        crate::input::init_state("ALL");
+        let d = sample();
+        let (full, _) = render_svg_layer(&d, 1072, 1448, "ALL", 0, "full");
+        let (base, base_texts) = render_svg_layer(&d, 1072, 1448, "ALL", 0, "base");
+        let (dyn_, dyn_texts) = render_svg_layer(&d, 1072, 1448, "ALL", 0, "dyn");
+        // full 照旧含全部文字；base/dyn 的 SVG 里已无 <text>，文字走 blit
+        assert!(full.contains("KKANPAN") && full.contains("10.26") && full.contains("浦发银行"));
+        assert!(!base.contains("<text") && !dyn_.contains("<text"));
+        assert!(dyn_.contains("<polyline"));
+        assert!(base_texts.iter().any(|t| t.s.contains("浦发银行")));
+        assert!(dyn_texts.iter().any(|t| t.s.contains("10.26")));
+    }
+
+    #[test]
+    fn glyph_blits_visible_pixels() {
+        use super::{blit_text, sprite_for, Anchor, BlitText};
+        let sp = sprite_for('0', 33);
+        assert!(!sp.px.is_empty() && sp.w > 0 && sp.h > 0);
+        let mut pix = resvg::tiny_skia::Pixmap::new(200, 60).expect("pixmap");
+        pix.fill(resvg::tiny_skia::Color::WHITE);
+        blit_text(&mut pix, &BlitText { s: "10.26".into(), x: 10, y: 40, px: 33, anchor: Anchor::Start });
+        assert!(pix.data().iter().any(|&v| v < 128));
+    }
 }

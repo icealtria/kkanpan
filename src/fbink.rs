@@ -183,38 +183,39 @@ pub struct DirtyRect {
     pub h: i32,
 }
 
-// 碎片合并：数字/Sparkline 刷新常打出几十个小 rect（>15 就被迫整屏 GL16 全闪）。
-// 贪心合并并集开销最小的一对，直到 ≤8 个或开销超 50%，把“31 rects / 4.9%”收成几个 DU 局部刷新
-fn merge_rects(mut rects: Vec<DirtyRect>) -> Vec<DirtyRect> {
-    if rects.len() <= 8 {
+// 碎片合并：数据刷新多为“同列散点”（各卡价格/波形同 x、不同 y），按 x 重叠扫成一列一个
+// 高条（如价格列、波形列、状态栏），把“29 rects / 7%”收成 2~3 个 DU 局部刷新
+fn merge_rects(rects: Vec<DirtyRect>, limit: usize) -> Vec<DirtyRect> {
+    let n = rects.len();
+    if n <= 8 {
         return rects;
     }
-    let area = |r: &DirtyRect| (r.w as u64) * (r.h as u64);
-    let union = |a: &DirtyRect, b: &DirtyRect| DirtyRect {
-        x: a.x.min(b.x),
-        y: a.y.min(b.y),
-        w: (a.x + a.w).max(b.x + b.w) - a.x.min(b.x),
-        h: (a.y + a.h).max(b.y + b.h) - a.y.min(b.y),
-    };
-    while rects.len() > 8 {
-        let mut best: Option<(usize, usize, u64)> = None;
-        for i in 0..rects.len() {
-            for j in (i + 1)..rects.len() {
-                let cost = area(&union(&rects[i], &rects[j]))
-                    .saturating_sub(area(&rects[i]) + area(&rects[j]));
-                if best.map_or(true, |(_, _, c)| cost < c) {
-                    best = Some((i, j, cost));
-                }
+    let mut order: Vec<usize> = (0..n).collect();
+    order.sort_by_key(|&i| (rects[i].x, rects[i].y));
+    let mut groups: Vec<DirtyRect> = Vec::new();
+    for &i in &order {
+        let r = rects[i];
+        match groups
+            .iter_mut()
+            .find(|g| r.x <= g.x + g.w && g.x <= r.x + r.w)
+        {
+            Some(g) => {
+                let (x0, y0) = (g.x.min(r.x), g.y.min(r.y));
+                let (x1, y1) = ((g.x + g.w).max(r.x + r.w), (g.y + g.h).max(r.y + r.h));
+                g.x = x0;
+                g.y = y0;
+                g.w = x1 - x0;
+                g.h = y1 - y0;
             }
+            None => groups.push(r),
         }
-        let (i, j, cost) = best.expect("len > 8");
-        if cost * 2 > area(&rects[i]) + area(&rects[j]) {
-            break;
-        }
-        rects[i] = union(&rects[i], &rects[j]);
-        rects.swap_remove(j);
     }
-    rects
+    // 没收敛（组数不比原来少，或仍超限）就原样返回，调用方按老规则整屏 GL16
+    if groups.len() < n && groups.len() <= limit {
+        groups
+    } else {
+        rects
+    }
 }
 
 #[cfg(test)]
@@ -227,7 +228,7 @@ mod tests {
         let v: Vec<DirtyRect> = (0..12)
             .map(|i| DirtyRect { x: 0, y: i * 24, w: 24, h: 24 })
             .collect();
-        assert_eq!(merge_rects(v).len(), 8);
+        assert_eq!(merge_rects(v, 15).len(), 1);
     }
 
     #[test]
@@ -235,7 +236,18 @@ mod tests {
         let v: Vec<DirtyRect> = (0..9)
             .map(|i| DirtyRect { x: i * 200, y: 0, w: 24, h: 24 })
             .collect();
-        assert_eq!(merge_rects(v).len(), 9);
+        assert_eq!(merge_rects(v, 15).len(), 9);
+    }
+
+    #[test]
+    fn merges_price_column() {
+        // 数据刷新典型：同 x 列、y 散开的价格小块 → 收成 1 个高条
+        let v: Vec<DirtyRect> = (0..10)
+            .map(|i| DirtyRect { x: 840, y: 200 + i * 103, w: 192, h: 48 })
+            .collect();
+        let m = merge_rects(v, 15);
+        assert_eq!(m.len(), 1);
+        assert_eq!((m[0].x, m[0].w), (840, 192));
     }
 }
 
@@ -312,7 +324,7 @@ impl ScreenDiffer {
                 h: ((y1 - y0) * bs).min(h - y0 * bs),
             });
         }
-        merge_rects(out)
+        merge_rects(out, 15)
     }
 
     pub fn update(&mut self, disp: &Display, gray: &[u8], w: i32, h: i32, full: bool) -> Result<(), String> {
