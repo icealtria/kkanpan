@@ -313,9 +313,37 @@ fn spark_points(
     sw: i32,
     sh: i32,
 ) -> (String, Option<i32>) {
+    let Some(g) = spark_geom(item, large) else {
+        return (String::new(), None);
+    };
+    let n = item.prices.len();
+    let stride = spark_stride(n);
+    let mut pts = String::with_capacity(n.div_ceil(stride) * 12 + 8);
+    use std::fmt::Write as _;
+    for (i, &p) in item.prices.iter().enumerate() {
+        if i % stride != 0 && i + 1 != n {
+            continue;
+        }
+        let (x, y) = spark_xy(item, &g, sx, sy, sw, sh, i, p);
+        if !pts.is_empty() {
+            pts.push(' ');
+        }
+        let _ = write!(&mut pts, "{x},{y}");
+    }
+    (pts, spark_ref_y(&g, sy, sh))
+}
+
+// 波形几何（SVG 字符串版与 tiny-skia 直绘版共享，公式逐字一致，零漂移）
+struct SparkGeom {
+    mn: f64,
+    mx: f64,
+    reference: f64, // 0.0=不画基准线
+}
+
+fn spark_geom(item: &StockData, large: bool) -> Option<SparkGeom> {
     let prices = &item.prices;
     if prices.len() < 2 {
-        return (String::new(), None);
+        return None;
     }
     let (mut mn, mut mx) = sparkline_range(prices);
     let is_yahoo = item.timestamps.len() == prices.len() && item.regular_end > item.regular_start;
@@ -333,41 +361,247 @@ fn spark_points(
     } else if reference < mn || reference > mx {
         reference = 0.0; // 超出当日范围就不画（对齐 render.go）
     }
-    let mut rng = mx - mn;
+    Some(SparkGeom { mn, mx, reference })
+}
+
+fn spark_stride(n: usize) -> usize {
+    // 抽稀：480px 宽画 240 点=每像素 2 点，纯属过采样；120 点仍 4px 一点，折线视觉一致
+    n.div_ceil(120).max(1)
+}
+
+fn spark_xy(
+    item: &StockData,
+    g: &SparkGeom,
+    sx: i32,
+    sy: i32,
+    sw: i32,
+    sh: i32,
+    i: usize,
+    p: f64,
+) -> (i32, i32) {
+    let mut rng = g.mx - g.mn;
     if rng == 0.0 {
         rng = 1.0;
     }
-    let ref_y = if reference > 0.0 {
-        Some(sy + 2 + ((mx - reference) * (sh - 4) as f64 / rng) as i32)
+    let x = if item.timestamps.len() == item.prices.len() && item.regular_end > item.regular_start
+    {
+        let total = (item.regular_end - item.regular_start).max(1) as f64;
+        sx + 2 + ((item.timestamps[i] - item.regular_start) as f64 * (sw - 4) as f64 / total) as i32
+    } else {
+        let total = config::chart_total(&item.code, item.prices.len()).max(1) as f64;
+        sx + 2 + (i as f64 * (sw - 4) as f64 / total) as i32
+    };
+    let y = sy + 2 + ((g.mx - p) * (sh - 4) as f64 / rng) as i32;
+    (x, y)
+}
+
+fn spark_ref_y(g: &SparkGeom, sy: i32, sh: i32) -> Option<i32> {
+    if g.reference > 0.0 {
+        let mut rng = g.mx - g.mn;
+        if rng == 0.0 {
+            rng = 1.0;
+        }
+        Some(sy + 2 + ((g.mx - g.reference) * (sh - 4) as f64 / rng) as i32)
     } else {
         None
+    }
+}
+
+// 波形直绘：与模板 polyline/ref-line 逐像素一致（同为 tiny-skia 光栅化，
+// 默认 Butt/Miter 与 SVG 缺省一致），跳过 minijinja+usvg 整条管线
+fn draw_sparkline(
+    canvas: &mut resvg::tiny_skia::Pixmap,
+    item: &StockData,
+    large: bool,
+    sx: i32,
+    sy: i32,
+    sw: i32,
+    sh: i32,
+) {
+    use resvg::tiny_skia::{Paint, PathBuilder, Stroke, StrokeDash, Transform};
+    let Some(g) = spark_geom(item, large) else {
+        return;
     };
-    let n = prices.len();
-    // 抽稀：480px 宽画 240 点=每像素 2 点，纯属过采样；120 点仍 4px 一点，折线视觉一致，
-    // 但 points 字符串减半，tpl/parse/raster 三处全受益。x 仍按原下标映射，位置不变
-    let stride = n.div_ceil(120).max(1);
-    let mut pts = String::with_capacity(n.div_ceil(stride) * 12 + 8);
-    use std::fmt::Write as _;
-    for (i, &p) in prices.iter().enumerate() {
+    if let Some(ry) = spark_ref_y(&g, sy, sh) {
+        let mut pb = PathBuilder::new();
+        pb.move_to((sx + 4) as f32, ry as f32);
+        pb.line_to((sx + sw - 4) as f32, ry as f32);
+        if let Some(path) = pb.finish() {
+            let mut paint = Paint::default();
+            paint.set_color_rgba8(128, 128, 128, 255); // #808080
+            let stroke = Stroke {
+                width: 1.0,
+                dash: StrokeDash::new(vec![3.0, 3.0], 0.0),
+                ..Default::default()
+            };
+            canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+        }
+    }
+    let n = item.prices.len();
+    let stride = spark_stride(n);
+    let mut pb = PathBuilder::new();
+    let mut first = true;
+    for (i, &p) in item.prices.iter().enumerate() {
         if i % stride != 0 && i + 1 != n {
             continue;
         }
-        let x = if is_yahoo && item.timestamps.len() == prices.len() {
-            let total = (item.regular_end - item.regular_start).max(1) as f64;
-            sx + 2
-                + ((item.timestamps[i] - item.regular_start) as f64 * (sw - 4) as f64 / total)
-                    as i32
+        let (x, y) = spark_xy(item, &g, sx, sy, sw, sh, i, p);
+        if first {
+            pb.move_to(x as f32, y as f32);
+            first = false;
         } else {
-            let total = config::chart_total(&item.code, prices.len()).max(1) as f64;
-            sx + 2 + (i as f64 * (sw - 4) as f64 / total) as i32
-        };
-        let y = sy + 2 + ((mx - p) * (sh - 4) as f64 / rng) as i32;
-        if !pts.is_empty() {
-            pts.push(' ');
+            pb.line_to(x as f32, y as f32);
         }
-        let _ = write!(&mut pts, "{x},{y}");
     }
-    (pts, ref_y)
+    if let Some(path) = pb.finish() {
+        let mut paint = Paint::default();
+        paint.set_color_rgba8(0, 0, 0, 255);
+        let stroke = Stroke { width: 2.0, ..Default::default() };
+        canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+    }
+}
+
+// 动态层直绘（无 minijinja、无 usvg、无 String 拼接）：画波形 + blit 数字/状态
+// 返回 blit 个数（日志用）
+// 灰度域直接 blit（动态文字）：sprite 本就是白底灰度，价格区底色也是白，
+// 逐字节写，无 RGBA 中间层、无 alpha 展开
+fn blit_text_gray(buf: &mut [u8], stride: i32, t: &BlitText) {
+    if t.s.is_empty() {
+        return;
+    }
+    let advs: Vec<i32> = t.s.chars().map(|ch| advance_for(ch, t.px)).collect();
+    let total: i32 = advs.iter().sum();
+    let mut pen = match t.anchor {
+        Anchor::Start => t.x,
+        Anchor::Middle => t.x - total / 2,
+        Anchor::End => t.x - total,
+    };
+    let h = buf.len() as i32 / stride;
+    let bg: u8 = if t.invert { 0 } else { 255 };
+    for (ch, adv) in t.s.chars().zip(advs) {
+        let sp = sprite_for(ch, t.px);
+        if !sp.px.is_empty() {
+            let (x0, y0) = (pen + sp.dx, t.y - sp.dy);
+            let (xa, xb) = (x0.max(0), (x0 + sp.w).min(stride));
+            let (ya, yb) = (y0.max(0), (y0 + sp.h).min(h));
+            for yy in ya..yb {
+                let srow = (yy - y0) * sp.w;
+                let drow = yy * stride;
+                for xx in xa..xb {
+                    let v = sp.px[(srow + (xx - x0)) as usize];
+                    let w = if t.invert { 255 - v } else { v };
+                    if w != bg {
+                        buf[(drow + xx) as usize] = w;
+                    }
+                }
+            }
+        }
+        pen += adv;
+    }
+}
+
+// 灰度域合成（无全屏 RGBA 画布）：整屏只拷 1.5MB base 灰度；
+// 波形逐卡切小 tile 光栅化贴回；文字直接灰度 blit。返回 (tiles, blits)
+fn compose_dynamic(
+    base_pix: &resvg::tiny_skia::Pixmap,
+    gray: &mut [u8],
+    data: &[StockData],
+    width: i32,
+    height: i32,
+    view: &str,
+    page: usize,
+) -> (usize, usize) {
+    let large = crate::input::style_mode() == "large";
+    let m = metrics(large, width);
+    let pages = paginate(data, height, view);
+    let cur = page.min(pages.len().saturating_sub(1));
+    let (mut tiles, mut blits) = (0, 0);
+    TILE.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        if !matches!(&*slot, Some(p) if p.width() == m.sp_w as u32 && p.height() == m.sp_h as u32)
+        {
+            *slot = Some(
+                resvg::tiny_skia::Pixmap::new(m.sp_w as u32, m.sp_h as u32).expect("pixmap"),
+            );
+        }
+        let tile = slot.as_mut().expect("pixmap");
+        let mut y = CONTENT_TOP;
+        for b in &pages[cur] {
+            match b {
+                Block::Header { .. } => y += HEADER_H,
+                Block::Card(item) => {
+                    let (sx, sy, sw, sh) = (m.sp_x, y + m.sp_dy, m.sp_w, m.sp_h);
+                    if item.prices.len() >= 2 {
+                        // base 切 tile → 相对坐标画线 → 灰度贴回（点位钳在框内 2px，线宽 1px 不外溢）
+                        {
+                            let td = tile.data_mut();
+                            let bd = base_pix.data();
+                            for r in 0..sh {
+                                let s = ((sy + r) * width + sx) as usize * 4;
+                                let d = (r * sw) as usize * 4;
+                                td[d..d + (sw * 4) as usize]
+                                    .copy_from_slice(&bd[s..s + (sw * 4) as usize]);
+                            }
+                        }
+                        draw_sparkline(tile, item, large, 0, 0, sw, sh);
+                        let td = tile.data();
+                        for r in 0..sh {
+                            for c in 0..sw {
+                                let p = &td[((r * sw + c) * 4) as usize..];
+                                let a = p[3] as u32;
+                                let rr = p[0] as u32 + 255 - a;
+                                let gg = p[1] as u32 + 255 - a;
+                                let bb = p[2] as u32 + 255 - a;
+                                gray[((sy + r) * width + sx + c) as usize] =
+                                    ((rr * 77 + gg * 150 + bb * 29) >> 8) as u8;
+                            }
+                        }
+                        tiles += 1;
+                    }
+                    let (price_s, chg_s) = stock_strings(item.price, item.change, item.pct);
+                    blit_text_gray(
+                        gray,
+                        width,
+                        &BlitText {
+                            s: price_s,
+                            x: width - 45,
+                            y: y + m.pr_dy + m.pr_px,
+                            px: m.pr_px,
+                            anchor: Anchor::End,
+                            invert: false,
+                        },
+                    );
+                    blit_text_gray(
+                        gray,
+                        width,
+                        &BlitText {
+                            s: chg_s,
+                            x: width - 45,
+                            y: y + m.ch_dy + m.ch_px,
+                            px: m.ch_px,
+                            anchor: Anchor::End,
+                            invert: false,
+                        },
+                    );
+                    blits += 2;
+                    y += m.chh;
+                }
+            }
+        }
+    });
+    blit_text_gray(
+        gray,
+        width,
+        &BlitText {
+            s: crate::kindle::format_status_bar(),
+            x: width - MARGIN_X,
+            y: height - 24 + px(4),
+            px: px(4),
+            anchor: Anchor::End,
+            invert: false,
+        },
+    );
+    (tiles, blits + 1)
 }
 
 static TPL: OnceLock<Environment<'static>> = OnceLock::new();
@@ -529,6 +763,59 @@ pub fn render_svg(data: &[StockData], width: i32, height: i32, view: &str, page:
     render_svg_layer(data, width, height, view, page, "full").0
 }
 
+// 卡片布局度量（SVG 模板版与直绘版共享一份数字，零漂移）
+struct Metrics {
+    name_dy: i32,
+    name_px: i32,
+    code_dy: i32,
+    code_px: i32,
+    sp_x: i32,
+    sp_dy: i32,
+    sp_w: i32,
+    sp_h: i32,
+    pr_dy: i32,
+    pr_px: i32,
+    ch_dy: i32,
+    ch_px: i32,
+    chh: i32,
+}
+
+fn metrics(large: bool, width: i32) -> Metrics {
+    if large {
+        Metrics {
+            name_dy: 18,
+            name_px: px(8),
+            code_dy: 62,
+            code_px: px(5),
+            sp_x: 210,
+            sp_dy: 15,
+            sp_w: width - 490,
+            sp_h: LARGE_CARD_H - 30,
+            pr_dy: 16,
+            pr_px: px(9),
+            ch_dy: 64,
+            ch_px: px(6),
+            chh: LARGE_CARD_H,
+        }
+    } else {
+        Metrics {
+            name_dy: 14,
+            name_px: px(6),
+            code_dy: 48,
+            code_px: px(4),
+            sp_x: 240,
+            sp_dy: 20,
+            sp_w: 480,
+            sp_h: 63,
+            pr_dy: 14,
+            pr_px: px(8),
+            ch_dy: 52,
+            ch_px: px(5),
+            chh: NORMAL_CARD_H,
+        }
+    }
+}
+
 fn render_svg_layer(
     data: &[StockData],
     width: i32,
@@ -596,7 +883,7 @@ fn render_svg_layer(
     let total = pages.len();
     let cur = page.min(total.saturating_sub(1));
 
-    let (
+    let Metrics {
         name_dy,
         name_px,
         code_dy,
@@ -610,39 +897,7 @@ fn render_svg_layer(
         ch_dy,
         ch_px,
         chh,
-    ) = if large {
-        (
-            18,
-            px(8),
-            62,
-            px(5),
-            210,
-            15,
-            width - 490,
-            LARGE_CARD_H - 30,
-            16,
-            px(9),
-            64,
-            px(6),
-            LARGE_CARD_H,
-        )
-    } else {
-        (
-            14,
-            px(6),
-            48,
-            px(4),
-            240,
-            20,
-            480,
-            63,
-            14,
-            px(8),
-            52,
-            px(5),
-            NORMAL_CARD_H,
-        )
-    };
+    } = metrics(large, width);
 
     let mut y = CONTENT_TOP;
     let mut blocks = vec![];
@@ -1036,12 +1291,23 @@ pub fn pixmap_to_gray(pix: &resvg::tiny_skia::Pixmap) -> Vec<u8> {
 }
 
 // 静态层缓存：Tab/表头/股票名只与 (w,h,view,style,page) 有关，数据刷新不失效；
-// 命中后每帧只剩动态小 SVG（价格/波形/状态）的 parse+raster
+// pix 供波形 tile 裁切，gray 供整屏 1.5MB 快拷（代替 6MB RGBA 拷贝）
+struct BaseEntry {
+    pix: resvg::tiny_skia::Pixmap,
+    gray: Vec<u8>,
+}
+
 static BASE: std::sync::LazyLock<
     std::sync::Mutex<
-        std::collections::HashMap<(i32, i32, String, String, usize, u64), resvg::tiny_skia::Pixmap>,
+        std::collections::HashMap<(i32, i32, String, String, usize, u64), BaseEntry>,
     >,
 > = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+thread_local! {
+    // 波形 tile：单卡火花区大小，同 style 复用，逐卡裁切→画线→灰度贴回
+    static TILE: std::cell::RefCell<Option<resvg::tiny_skia::Pixmap>> =
+        const { std::cell::RefCell::new(None) };
+}
 
 // 成员指纹：空数据→有数据（或股票增减）时 base 版式会变，必须换 key，否则复用无卡片底图
 fn stocks_fp(data: &[StockData]) -> u64 {
@@ -1064,11 +1330,7 @@ pub fn render_gray_page(
 ) -> Vec<u8> {
     let t0 = std::time::Instant::now();
     let style = crate::input::style_mode();
-    let (svg, dyn_texts) = render_svg_layer(data, width, height, view, page, "dyn");
-    let t_tpl = t0.elapsed();
-    let tree = parse_tree(&svg);
-    let t_parse = t0.elapsed() - t_tpl;
-    // base 命中则零 parse/raster；未命中才渲染一次并缓存
+    // base 命中则零 parse/raster；未命中才渲染一次并缓存（RGBA+灰度双份）
     let t_base0 = std::time::Instant::now();
     let mut base = BASE.lock().unwrap();
     if base.len() >= 8 {
@@ -1076,7 +1338,7 @@ pub fn render_gray_page(
     }
     let key = (width, height, view.to_string(), style, page, stocks_fp(data));
     let hit = base.contains_key(&key);
-    let bp = base.entry(key).or_insert_with(|| {
+    let be = base.entry(key).or_insert_with(|| {
         let (bsvg, base_texts) = render_svg_layer(data, width, height, view, page, "base");
         let btree = parse_tree(&bsvg);
         let size = btree.size();
@@ -1087,46 +1349,23 @@ pub fn render_gray_page(
         for t in &base_texts {
             blit_text(&mut pix, t);
         }
-        pix
+        let mut gray = Vec::new();
+        pixmap_to_gray_into(&pix, &mut gray);
+        BaseEntry { pix, gray }
     });
     let t_base = t_base0.elapsed();
-    // 合成到底图画布：拷 base（6MB memcpy）+ 叠动态层 + blit 动态字，全程复用线程局部 Pixmap
+    // 灰度域合成：1.5MB base 灰度快拷 + tile 波形 + 灰度 blit，无全屏 RGBA 拷贝
     let t_dyn0 = std::time::Instant::now();
-    let mut gray = Vec::new();
-    let mut t_gray = std::time::Duration::ZERO;
-    let mut t_blit = std::time::Duration::ZERO;
-    PIXMAP.with(|cell| {
-        let (w, h) = (tree.size().width() as u32, tree.size().height() as u32);
-        let mut slot = cell.borrow_mut();
-        if !matches!(&*slot, Some(p) if p.width() == w && p.height() == h) {
-            *slot = Some(resvg::tiny_skia::Pixmap::new(w, h).expect("pixmap"));
-        }
-        let canvas = slot.as_mut().expect("pixmap");
-        canvas.data_mut().copy_from_slice(bp.data());
-        render_tree_into(&tree, canvas);
-        let b0 = std::time::Instant::now();
-        for t in &dyn_texts {
-            blit_text(canvas, t);
-        }
-        t_blit = b0.elapsed();
-        let g0 = std::time::Instant::now();
-        pixmap_to_gray_into(canvas, &mut gray);
-        t_gray = g0.elapsed();
-    });
-    drop(base);
+    let mut gray = be.gray.clone();
+    let (tiles, blits) = compose_dynamic(&be.pix, &mut gray, data, width, height, view, page);
     let t_dyn = t_dyn0.elapsed();
+    drop(base);
     crate::dlog!(
-        "[render] page {page}: tpl={}ms base={}{}ms parse={}ms dyn={}ms blit={}ms gray={}ms total={}ms (dyn svg {}B, {} blits)",
-        t_tpl.as_millis(),
+        "[render] page {page}: base={}{}ms dyn={}ms total={}ms ({tiles} tiles, {blits} blits)",
         if hit { "hit+" } else { "miss+" },
         t_base.as_millis(),
-        t_parse.as_millis(),
-        (t_dyn - t_gray - t_blit).as_millis(),
-        t_blit.as_millis(),
-        t_gray.as_millis(),
+        t_dyn.as_millis(),
         t0.elapsed().as_millis(),
-        svg.len(),
-        dyn_texts.len(),
     );
     gray
 }
@@ -1181,6 +1420,28 @@ mod render_tests {
         assert!(dyn_.contains("<polyline"));
         assert!(base_texts.iter().any(|t| t.s.contains("浦发银行")));
         assert!(dyn_texts.iter().any(|t| t.s.contains("10.26")));
+    }
+
+    #[test]
+    fn sparkline_draws_dark_pixels() {
+        let mut d = sample().pop().unwrap();
+        d.prices = (0..200).map(|i| 10.0 + (i as f64 * 0.3).sin()).collect();
+        let mut pix = resvg::tiny_skia::Pixmap::new(600, 120).expect("pixmap");
+        pix.fill(resvg::tiny_skia::Color::WHITE);
+        super::draw_sparkline(&mut pix, &d, false, 10, 10, 480, 63);
+        assert!(pix.data().chunks_exact(4).any(|p| p[0] < 128));
+    }
+
+    #[test]
+    fn gray_blit_writes_dark_pixels() {
+        use super::{blit_text_gray, Anchor, BlitText};
+        let mut buf = vec![255u8; 200 * 60];
+        blit_text_gray(
+            &mut buf,
+            200,
+            &BlitText { s: "10.26".into(), x: 10, y: 40, px: 33, anchor: Anchor::Start, invert: false },
+        );
+        assert!(buf.iter().any(|&v| v < 128));
     }
 
     #[test]
