@@ -5,8 +5,55 @@ use crate::layout::{
     spark_stride, spark_xy, stock_strings,
 };
 use crate::text::{Anchor, BlitText, advance_for, fontset, sprite_for};
+pub(crate) fn draw_line_gray(
+    gray: &mut [u8],
+    stride: i32,
+    height: i32,
+    mut x0: i32,
+    mut y0: i32,
+    x1: i32,
+    y1: i32,
+    color: u8,
+    width: i32,
+) {
+    let dx = (x1 - x0).abs();
+    let sx = if x0 < x1 { 1 } else { -1 };
+    let dy = -(y1 - y0).abs();
+    let sy = if y0 < y1 { 1 } else { -1 };
+    let mut err = dx + dy;
+    loop {
+        for wy in 0..width {
+            for wx in 0..width {
+                let px = x0 + wx;
+                let py = y0 + wy;
+                if px >= 0 && px < stride && py >= 0 && py < height {
+                    let idx = (py * stride + px) as usize;
+                    if idx < gray.len() {
+                        gray[idx] = color;
+                    }
+                }
+            }
+        }
+        if x0 == x1 && y0 == y1 {
+            break;
+        }
+        let e2 = 2 * err;
+        if e2 >= dy {
+            err += dy;
+            x0 += sx;
+        }
+        if e2 <= dx {
+            err += dx;
+            y0 += sy;
+        }
+    }
+}
+
+// 波形灰度直绘：替代 tiny-skia tile 光栅化，直接写 1D 灰度数组，无 RGBA 中间层
 pub(crate) fn draw_sparkline(
-    canvas: &mut resvg::tiny_skia::Pixmap,
+    gray: &mut [u8],
+    width: i32,
+    height: i32,
     item: &StockData,
     large: bool,
     sx: i32,
@@ -14,46 +61,30 @@ pub(crate) fn draw_sparkline(
     sw: i32,
     sh: i32,
 ) {
-    use resvg::tiny_skia::{Paint, PathBuilder, Stroke, StrokeDash, Transform};
     let Some(g) = spark_geom(item, large) else {
         return;
     };
     if let Some(ry) = spark_ref_y(&g, sy, sh) {
-        let mut pb = PathBuilder::new();
-        pb.move_to((sx + 4) as f32, ry as f32);
-        pb.line_to((sx + sw - 4) as f32, ry as f32);
-        if let Some(path) = pb.finish() {
-            let mut paint = Paint::default();
-            paint.set_color_rgba8(128, 128, 128, 255); // #808080
-            let stroke = Stroke {
-                width: 1.0,
-                dash: StrokeDash::new(vec![3.0, 3.0], 0.0),
-                ..Default::default()
-            };
-            canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+        // 昨收虚线：3 on / 3 off，灰 128，对齐旧 tiny-skia dash 效果
+        let (mut x, end) = (sx + 4, sx + sw - 4);
+        while x < end {
+            let seg = (x + 3).min(end);
+            draw_line_gray(gray, width, height, x, ry, seg, ry, 128, 1);
+            x += 6;
         }
     }
     let n = item.prices.len();
     let stride = spark_stride(n);
-    let mut pb = PathBuilder::new();
-    let mut first = true;
+    let mut prev: Option<(i32, i32)> = None;
     for (i, &p) in item.prices.iter().enumerate() {
         if i % stride != 0 && i + 1 != n {
             continue;
         }
         let (x, y) = spark_xy(item, &g, sx, sy, sw, sh, i, p);
-        if first {
-            pb.move_to(x as f32, y as f32);
-            first = false;
-        } else {
-            pb.line_to(x as f32, y as f32);
+        if let Some((px, py)) = prev {
+            draw_line_gray(gray, width, height, px, py, x, y, 0, 2);
         }
-    }
-    if let Some(path) = pb.finish() {
-        let mut paint = Paint::default();
-        paint.set_color_rgba8(0, 0, 0, 255);
-        let stroke = Stroke { width: 2.0, ..Default::default() };
-        canvas.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+        prev = Some((x, y));
     }
 }
 
@@ -97,63 +128,40 @@ pub(crate) fn blit_text_gray(buf: &mut [u8], stride: i32, t: &BlitText) {
 }
 
 // 灰度域合成（无全屏 RGBA 画布）：整屏只拷 1.5MB base 灰度；
-// 波形逐卡切小 tile 光栅化贴回；文字直接灰度 blit。返回 (tiles, blits)
+// 波形 Bresenham 直绘 + 文字灰度 blit，无 tile/RGBA/tiny-skia。返回 (tiles, blits)
 pub(crate) fn compose_dynamic(
-    base_pix: &resvg::tiny_skia::Pixmap,
     gray: &mut [u8],
     data: &[StockData],
     width: i32,
     height: i32,
     view: &str,
     page: usize,
-) -> (usize, usize) {
+) -> (usize, usize, Vec<crate::fbink::DirtyRect>) {
     let large = crate::input::style_mode().is_large();
     let m = metrics(large, width);
     let pages = paginate(data, height, view);
     let cur = page.min(pages.len().saturating_sub(1));
     let (mut tiles, mut blits) = (0, 0);
-    TILE.with(|cell| {
-        let mut slot = cell.borrow_mut();
-        if !matches!(&*slot, Some(p) if p.width() == m.sp_w as u32 && p.height() == m.sp_h as u32)
-        {
-            *slot = Some(
-                resvg::tiny_skia::Pixmap::new(m.sp_w as u32, m.sp_h as u32).expect("pixmap"),
-            );
-        }
-        let tile = slot.as_mut().expect("pixmap");
-        let mut y = CONTENT_TOP;
-        for b in &pages[cur] {
-            match b {
-                Block::Header { .. } => y += HEADER_H,
-                Block::Card(item) => {
-                    let (sx, sy, sw, sh) = (m.sp_x, y + m.sp_dy, m.sp_w, m.sp_h);
-                    if item.prices.len() >= 2 {
-                        // base 切 tile → 相对坐标画线 → 灰度贴回（点位钳在框内 2px，线宽 1px 不外溢）
-                        {
-                            let td = tile.data_mut();
-                            let bd = base_pix.data();
-                            for r in 0..sh {
-                                let s = ((sy + r) * width + sx) as usize * 4;
-                                let d = (r * sw) as usize * 4;
-                                td[d..d + (sw * 4) as usize]
-                                    .copy_from_slice(&bd[s..s + (sw * 4) as usize]);
-                            }
-                        }
-                        draw_sparkline(tile, item, large, 0, 0, sw, sh);
-                        let td = tile.data();
-                        for r in 0..sh {
-                            for c in 0..sw {
-                                let p = &td[((r * sw + c) * 4) as usize..];
-                                let a = p[3] as u32;
-                                let rr = p[0] as u32 + 255 - a;
-                                let gg = p[1] as u32 + 255 - a;
-                                let bb = p[2] as u32 + 255 - a;
-                                gray[((sy + r) * width + sx + c) as usize] =
-                                    ((rr * 77 + gg * 150 + bb * 29) >> 8) as u8;
-                            }
-                        }
-                        tiles += 1;
-                    }
+    let mut dirties = Vec::new();
+    let mut y = CONTENT_TOP;
+    for b in &pages[cur] {
+        match b {
+            Block::Header { .. } => y += HEADER_H,
+            Block::Card(item) => {
+                let (sx, sy, sw, sh) = (m.sp_x, y + m.sp_dy, m.sp_w, m.sp_h);
+                if item.prices.len() >= 2 {
+                    draw_sparkline(gray, width, height, item, large, sx, sy, sw, sh);
+                    dirties.push(crate::fbink::DirtyRect { x: sx, y: sy, w: sw, h: sh });
+                    tiles += 1;
+                }
+                // 右侧价格区右对齐、变长：保守覆盖 spark 尾到屏右整列，新旧文本并集全在内
+                let rx = sx + sw;
+                dirties.push(crate::fbink::DirtyRect {
+                    x: rx,
+                    y,
+                    w: width - rx,
+                    h: m.chh,
+                });
                     let (price_s, chg_s) = stock_strings(item.price, item.change, item.pct);
                     blit_text_gray(
                         gray,
@@ -184,7 +192,6 @@ pub(crate) fn compose_dynamic(
                 }
             }
         }
-    });
     blit_text_gray(
         gray,
         width,
@@ -197,7 +204,14 @@ pub(crate) fn compose_dynamic(
             invert: false,
         },
     );
-    (tiles, blits + 1)
+    // 底部状态栏右半（右对齐变长文本，并集保守覆盖）
+    dirties.push(crate::fbink::DirtyRect {
+        x: width / 2,
+        y: height - 50,
+        w: width / 2,
+        h: 50,
+    });
+    (tiles, blits + 1, dirties)
 }
 
 thread_local! {
@@ -265,16 +279,9 @@ pub fn pixmap_to_gray_into(pix: &resvg::tiny_skia::Pixmap, out: &mut Vec<u8>) {
 }
 
 // 静态层缓存：Tab/表头/股票名只与 (w,h,view,style,page) 有关，数据刷新不失效；
-// pix 供波形 tile 裁切，gray 供整屏 1.5MB 快拷（代替 6MB RGBA 拷贝）
+// 只存 1.5MB 灰度（动态层 Bresenham 直绘，不再需要 6MB RGBA 底裁切）
 pub(crate) struct BaseEntry {
-    pub(crate) pix: resvg::tiny_skia::Pixmap,
     pub(crate) gray: Vec<u8>,
-}
-
-thread_local! {
-    // 波形 tile：单卡火花区大小，同 style 复用，逐卡裁切→画线→灰度贴回
-    static TILE: std::cell::RefCell<Option<resvg::tiny_skia::Pixmap>> =
-        const { std::cell::RefCell::new(None) };
 }
 
 // 成员指纹：空数据→有数据（或股票增减）时 base 版式会变，必须换 key，否则复用无卡片底图

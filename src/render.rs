@@ -370,20 +370,30 @@ fn stocks_fp(data: &[StockData]) -> u64 {
     h.finish()
 }
 
+pub struct RenderResult {
+    pub gray: Vec<u8>,
+    // base 命中才 Some：静态层与屏上一致，dirties 并集可直接局部推；
+    // miss/成员变化时 None，调用方走整屏
+    pub dirties: Option<Vec<crate::fbink::DirtyRect>>,
+}
+
 pub fn render_gray_page(
     data: &[StockData],
     width: i32,
     height: i32,
     view: &str,
     page: usize,
-) -> Vec<u8> {
+) -> RenderResult {
     let t0 = std::time::Instant::now();
     let style = crate::input::style_mode().as_str().to_string();
     // base 命中则零 parse/raster；未命中才渲染一次并缓存（RGBA+灰度双份）
     let t_base0 = std::time::Instant::now();
     let mut base = BASE.lock().unwrap();
     if base.len() >= 8 {
-        base.clear();
+        // 满了只剔一个最旧/任意键，保留常驻页；旧 clear() 会导致切 Tab 必 miss
+        if let Some(k) = base.keys().next().cloned() {
+            base.remove(&k);
+        }
     }
     let key = (width, height, view.to_string(), style, page, stocks_fp(data));
     let hit = base.contains_key(&key);
@@ -400,13 +410,13 @@ pub fn render_gray_page(
         }
         let mut gray = Vec::new();
         pixmap_to_gray_into(&pix, &mut gray);
-        BaseEntry { pix, gray }
+        BaseEntry { gray }
     });
     let t_base = t_base0.elapsed();
-    // 灰度域合成：1.5MB base 灰度快拷 + tile 波形 + 灰度 blit，无全屏 RGBA 拷贝
+    // 灰度域合成：1.5MB base 灰度快拷 + Bresenham 波形直绘 + 灰度 blit
     let t_dyn0 = std::time::Instant::now();
     let mut gray = be.gray.clone();
-    let (tiles, blits) = compose_dynamic(&be.pix, &mut gray, data, width, height, view, page);
+    let (tiles, blits, dirties) = compose_dynamic(&mut gray, data, width, height, view, page);
     let t_dyn = t_dyn0.elapsed();
     drop(base);
     crate::dlog!(
@@ -416,10 +426,13 @@ pub fn render_gray_page(
         t_dyn.as_millis(),
         t0.elapsed().as_millis(),
     );
-    gray
+    RenderResult {
+        gray,
+        dirties: if hit { Some(dirties) } else { None },
+    }
 }
 
-pub fn render_gray(data: &[StockData], width: i32, height: i32, view: &str) -> Vec<u8> {
+pub fn render_gray(data: &[StockData], width: i32, height: i32, view: &str) -> RenderResult {
     let total = total_pages(data, height, view).max(1);
     render_gray_page(data, width, height, view, crate::input::clamp_page(total))
 }
@@ -472,10 +485,9 @@ mod render_tests {
     fn sparkline_draws_dark_pixels() {
         let mut d = sample().pop().unwrap();
         d.prices = (0..200).map(|i| 10.0 + (i as f64 * 0.3).sin()).collect();
-        let mut pix = resvg::tiny_skia::Pixmap::new(600, 120).expect("pixmap");
-        pix.fill(resvg::tiny_skia::Color::WHITE);
-        crate::gray::draw_sparkline(&mut pix, &d, false, 10, 10, 480, 63);
-        assert!(pix.data().chunks_exact(4).any(|p| p[0] < 128));
+        let mut gray = vec![255u8; 600 * 120];
+        crate::gray::draw_sparkline(&mut gray, 600, 120, &d, false, 10, 10, 480, 63);
+        assert!(gray.iter().any(|&v| v < 128));
     }
 
     #[test]
