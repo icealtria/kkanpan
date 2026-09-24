@@ -6,7 +6,7 @@ Renders stock data as grayscale images directly to the e-ink framebuffer via [FB
 
 ## Features
 
-- **E-ink optimized rendering** — SVG to grayscale pipeline with partial refresh (DU waveform) and block-level diffing to minimize flash and latency.
+- **E-ink optimized rendering** — SVG to grayscale pipeline with partial refresh (DU waveform) and analytic dirty rects to minimize flash and latency.
 - **Touch input** — swipe vertically to flip pages, tap tabs to switch views, tap corners for style toggle and exit. Power button toggles touch on/off.
 - **Auto mode** — switches stock groups automatically based on CST time rules (e.g. A-shares during 09:00-15:30, US equities after 16:00).
 - **Multi-source data** — Tencent (`qt.gtimg.cn`) for A-shares/US stocks, Yahoo Finance for commodities. Parallel fetch via scoped threads.
@@ -95,7 +95,7 @@ src/
   config.rs   — stock/app config, auto-rule matching, CST time
   fetch.rs    — HTTP fetch from Tencent/Yahoo, in-memory cache
   render.rs   — SVG template rendering, grayscale conversion
-  fbink.rs    — FBInk FFI, screen differ with block-level diffing
+  fbink.rs    — FBInk FFI, analytic dirty rects (zero-diffing) partial refresh
   input.rs    — touch/power button listeners, view/style state
   kindle.rs   — Kindle system integration (battery, frontlight, coexistence)
   server.rs   — optional HTTP server for remote monitoring

@@ -44,6 +44,35 @@ fn page_cache_key(view: &str, style: &str, page: usize, ver: u64) -> String {
     format!("{view}|{style}|{}|{page}|{ver}", crate::input::touch_enabled())
 }
 
+fn do_update(
+    disp: &fbink::Display,
+    res: &render::RenderResult,
+    w: i32,
+    h: i32,
+    do_full: bool,
+    screen_switched: bool,
+) {
+    // 底图失效（首刷/切 Tab/翻页/成员变化）或强刷 → 整屏；仅数据变动 → 解析式脏矩形局部推
+    if do_full || screen_switched || res.dirties.is_none() {
+        disp.write_gray(&res.gray, w, h, do_full).unwrap();
+        return;
+    }
+    let rects = fbink::merge_rects(res.dirties.as_ref().unwrap().clone(), 15);
+    let total = (w * h) as f64;
+    let dirty: f64 = rects.iter().map(|r| (r.w * r.h) as f64).sum();
+    crate::dlog!("[diff] {} rects, {:.1}% changed", rects.len(), dirty / total * 100.0);
+    // 碎片多时逐个 ioctl 发几百轮 e-ink 刷新，不如一次整屏 GL16（低闪，比 DU 干净得多）
+    if dirty / total > 0.40 || rects.len() > 15 {
+        disp.write_gray_mode(&res.gray, w, h, fbink::WFM_GL16, false).unwrap();
+    } else if disp.write_gray_partial(&res.gray, w, &rects).is_err() {
+        disp.write_gray(&res.gray, w, h, false).unwrap();
+    }
+}
+
+fn screen_id(view: &str, page: usize) -> String {
+    format!("{view}|{}|{page}", crate::input::style_mode().as_str())
+}
+
 fn main() {
     // launch.sh / run_on_kindle.sh 用单横线（-once），统一归一成双横线
     let args: Vec<String> = std::env::args().skip(1).map(|a| {
@@ -79,7 +108,6 @@ fn main() {
     }
 
     let disp = fbink::Display::open().expect("display init");
-    let mut differ = fbink::ScreenDiffer::new();
 
     // 字体磁盘加载与首轮网络 fetch 并行：隐藏预热延迟，首屏即缓存命中
     let warmer = std::thread::spawn(text::precache_names);
@@ -89,8 +117,8 @@ fn main() {
     eprintln!("Fetched {} stocks", data.len());
 
     if once {
-        let gray = render::render_gray(&data, width, height, &view0);
-        differ.update(&disp, &gray, width, height, true).unwrap();
+        let res = render::render_gray(&data, width, height, &view0);
+        do_update(&disp, &res, width, height, true, true);
         return;
     }
 
@@ -108,20 +136,23 @@ fn main() {
         }
     }
 
-    let gray = render::render_gray(&data, width, height, &input::view());
-    differ.update(&disp, &gray, width, height, true).unwrap();
+    let view = input::view();
+    let cur = input::clamp_page(layout::total_pages(&data, height, &view).max(1));
+    let res = render::render_gray_page(&data, width, height, &view, cur);
+    let mut last_screen = screen_id(&view, cur);
+    do_update(&disp, &res, width, height, true, true);
     let mut last = data;
     let mut flash_count = 0usize;
     let every = config::app().full_flash_every.max(1) as usize;
     let mut data_ver = 1u64;
 
     // 懒加载分页缓存：只存单页，用户翻到哪页才渲染哪页
-    let mut pool: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
-    let cur = input::clamp_page(layout::total_pages(&last, height, &input::view()).max(1));
-    pool.insert(
-        page_cache_key(&input::view(), input::style_mode().as_str(), cur, data_ver),
-        gray,
-    );
+    // 同 key 重复触发（屏上已是该页）直接跳过，代替旧 differ 的空比对
+    let mut pool: std::collections::HashMap<String, render::RenderResult> =
+        std::collections::HashMap::new();
+    let mut last_pushed =
+        page_cache_key(&view, input::style_mode().as_str(), cur, data_ver);
+    pool.insert(last_pushed.clone(), res);
 
     // 1 秒粒度轮询：既响应信号，又不打乱 interval 节拍
     let mut last_tick = std::time::Instant::now();
@@ -152,7 +183,14 @@ fn main() {
                     flash_count += 1;
                     flash_count % every == 0
                 };
-                differ.update(&disp, &pool[&key], width, height, do_full).unwrap();
+                if !do_full && key == last_pushed {
+                    crate::dlog!("[diff] No changes, skip update");
+                } else {
+                    let switched = screen_id(&view, cur) != last_screen;
+                    last_screen = screen_id(&view, cur);
+                    do_update(&disp, &pool[&key], width, height, do_full, switched);
+                    last_pushed = key;
+                }
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 if last_tick.elapsed() < std::time::Duration::from_secs(interval) {
@@ -168,12 +206,15 @@ fn main() {
                     let total = layout::total_pages(&d, height, &view).max(1);
                     let cur = input::clamp_page(total);
                     // 后台更新也只渲染当前停留的一页，其余页等用户翻到再懒加载
-                    let gray = render::render_gray_page(&d, width, height, &view, cur);
+                    let res = render::render_gray_page(&d, width, height, &view, cur);
                     flash_count += 1;
-                    differ
-                        .update(&disp, &gray, width, height, flash_count % every == 0)
-                        .unwrap();
-                    pool.insert(page_cache_key(&view, input::style_mode().as_str(), cur, data_ver), gray);
+                    let switched = screen_id(&view, cur) != last_screen;
+                    last_screen = screen_id(&view, cur);
+                    let key =
+                        page_cache_key(&view, input::style_mode().as_str(), cur, data_ver);
+                    do_update(&disp, &res, width, height, flash_count % every == 0, switched);
+                    pool.insert(key.clone(), res);
+                    last_pushed = key;
                 }
                 last = d;
             }
