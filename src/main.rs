@@ -106,6 +106,7 @@ fn main() {
     if config::app().dim_frontlight {
         kindle::save_and_turn_off_frontlight();
     }
+    kindle::enable_powersave_cpu();
 
     let disp = fbink::Display::open().expect("display init");
 
@@ -119,6 +120,7 @@ fn main() {
     if once {
         let res = render::render_gray(&data, width, height, &view0);
         do_update(&disp, &res, width, height, true, true);
+        kindle::restore_cpu_governor();
         return;
     }
 
@@ -268,6 +270,7 @@ fn main() {
 
     kindle::enable_coexist_mode();
     kindle::restore_frontlight();
+    kindle::restore_cpu_governor();
 }
 
 #[cfg(test)]

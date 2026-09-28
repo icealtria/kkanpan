@@ -69,6 +69,27 @@ pub fn save_and_turn_off_frontlight() {
     }
 }
 
+const CPU_GOV: &str = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor";
+static SAVED_GOV: OnceLock<String> = OnceLock::new();
+
+pub fn enable_powersave_cpu() {
+    if let Ok(cur) = std::fs::read_to_string(CPU_GOV) {
+        let cur = cur.trim().to_string();
+        let _ = SAVED_GOV.set(cur.clone());
+        if cur != "powersave" {
+            std::fs::write(CPU_GOV, "powersave").ok();
+        }
+        eprintln!("[Power] CPU governor {cur} -> powersave");
+    }
+}
+
+pub fn restore_cpu_governor() {
+    if let Some(g) = SAVED_GOV.get() {
+        std::fs::write(CPU_GOV, g).ok();
+        eprintln!("[Power] CPU governor restored to {g}");
+    }
+}
+
 pub fn restore_frontlight() {
     if let Some(v) = SAVED_BL.get() {
         std::fs::write(FRONTLIGHT, v).ok();

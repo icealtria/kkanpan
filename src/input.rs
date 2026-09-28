@@ -130,6 +130,7 @@ pub fn quit_app() -> ! {
     eprintln!("Exit requested. Restoring Kindle state...");
     crate::kindle::restore_frontlight();
     crate::kindle::enable_coexist_mode();
+    crate::kindle::restore_cpu_governor();
     std::process::Command::new("lipc-set-prop")
         .args(["com.lab126.appmgrd", "show", "app://com.lab126.booklet.home"])
         .output()
