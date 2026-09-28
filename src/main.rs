@@ -62,7 +62,7 @@ fn do_update(
     let dirty: f64 = rects.iter().map(|r| (r.w * r.h) as f64).sum();
     crate::dlog!("[diff] {} rects, {:.1}% changed", rects.len(), dirty / total * 100.0);
     // 碎片多时逐个 ioctl 发几百轮 e-ink 刷新，不如一次整屏 GL16（低闪，比 DU 干净得多）
-    if dirty / total > 0.40 || rects.len() > 15 {
+    if dirty / total > 0.80 || rects.len() > 15 {
         disp.write_gray_mode(&res.gray, w, h, fbink::WFM_GL16, false).unwrap();
     } else if disp.write_gray_partial(&res.gray, w, &rects).is_err() {
         disp.write_gray(&res.gray, w, h, false).unwrap();
@@ -154,6 +154,24 @@ fn main() {
         page_cache_key(&view, input::style_mode().as_str(), cur, data_ver);
     pool.insert(last_pushed.clone(), res);
 
+    // 后台预热其它 Tab 的数据：切 Tab 只读 cached_snapshot，冷 Tab 会在 UI 线程上
+    // 同步 refresh_data（数秒网络+TLC），提前拉好则切 Tab 只剩渲染+推送
+    {
+        let warm_views: Vec<String> = config::tab_modes()
+            .into_iter()
+            .filter(|v| fetch::cached_snapshot(v).is_empty())
+            .collect();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            for v in warm_views {
+                if !fetch::cached_snapshot(&v).is_empty() {
+                    continue; // 用户已切过，数据有了
+                }
+                fetch::refresh_data(&v);
+            }
+        });
+    }
+
     // 1 秒粒度轮询：既响应信号，又不打乱 interval 节拍
     let mut last_tick = std::time::Instant::now();
     loop {
@@ -166,31 +184,57 @@ fn main() {
                 // 点按只用内存里的缓存数据，不发网络请求（网络只在后台定时刷新）。
                 // 切视图/风格本来就全闪；翻页等局部刷新累计 flash_count，
                 // 每 every 次全闪一轮，清掉墨水屏残影。
+                let t_sw = std::time::Instant::now();
                 let view = input::view();
+                let t_fetch0 = std::time::Instant::now();
                 last = fetch::cached_snapshot(&view);
+                let mut cold = false;
                 if last.is_empty() {
+                    // 冷 Tab：UI 线程同步走网络（数秒），正常只发生一次（后台有预热兜底）
+                    cold = true;
                     last = fetch::get_data(&view); // 仅该 View 从未拉取过时 fallback
                 }
+                let t_fetch = t_fetch0.elapsed();
+                let t_pages0 = std::time::Instant::now();
                 let total = layout::total_pages(&last, height, &view).max(1);
                 let cur = input::clamp_page(total);
+                let t_pages = t_pages0.elapsed();
                 let key = page_cache_key(&view, input::style_mode().as_str(), cur, data_ver);
-                if !pool.contains_key(&key) {
+                let t_render0 = std::time::Instant::now();
+                let pool_hit = pool.contains_key(&key);
+                if !pool_hit {
                     pool.insert(key.clone(), render::render_gray_page(&last, width, height, &view, cur));
                 }
+                let t_render = t_render0.elapsed();
                 let do_full = if full {
                     true
                 } else {
                     flash_count += 1;
                     flash_count % every == 0
                 };
+                let mut pushed_ms = 0u128;
                 if !do_full && key == last_pushed {
                     crate::dlog!("[diff] No changes, skip update");
                 } else {
                     let switched = screen_id(&view, cur) != last_screen;
                     last_screen = screen_id(&view, cur);
+                    let t_push0 = std::time::Instant::now();
                     do_update(&disp, &pool[&key], width, height, do_full, switched);
+                    pushed_ms = t_push0.elapsed().as_millis();
                     last_pushed = key;
                 }
+                // 常开一行：dlog 默认关闭时也能看到切 Tab 各环节耗时
+                eprintln!(
+                    "[switch] view={view} page={cur} {}{}fetch={}ms pages={}ms render={}ms({}) push={}ms total={}ms",
+                    if full { "full " } else { "" },
+                    if cold { "cold " } else { "" },
+                    t_fetch.as_millis(),
+                    t_pages.as_millis(),
+                    t_render.as_millis(),
+                    if pool_hit { "pool-hit" } else { "pool-miss" },
+                    pushed_ms,
+                    t_sw.elapsed().as_millis(),
+                );
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 if last_tick.elapsed() < std::time::Duration::from_secs(interval) {

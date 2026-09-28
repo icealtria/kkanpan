@@ -4,7 +4,7 @@ use crate::layout::{
     Block, CONTENT_TOP, HEADER_H, MARGIN_X, metrics, paginate, px, spark_geom, spark_ref_y,
     spark_stride, spark_xy, stock_strings,
 };
-use crate::text::{Anchor, BlitText, advance_for, fontset, sprite_for};
+use crate::text::{BlitText, advance_for, fontset, sprite_for};
 pub(crate) fn draw_line_gray(
     gray: &mut [u8],
     stride: i32,
@@ -98,11 +98,7 @@ pub(crate) fn blit_text_gray(buf: &mut [u8], stride: i32, t: &BlitText) {
     }
     let advs: Vec<i32> = t.s.chars().map(|ch| advance_for(ch, t.px)).collect();
     let total: i32 = advs.iter().sum();
-    let mut pen = match t.anchor {
-        Anchor::Start => t.x,
-        Anchor::Middle => t.x - total / 2,
-        Anchor::End => t.x - total,
-    };
+    let mut pen = t.x - total; // 右对齐：x 为右端
     let h = buf.len() as i32 / stride;
     let bg: u8 = if t.invert { 0 } else { 255 };
     for (ch, adv) in t.s.chars().zip(advs) {
@@ -154,12 +150,14 @@ pub(crate) fn compose_dynamic(
                     dirties.push(crate::fbink::DirtyRect { x: sx, y: sy, w: sw, h: sh });
                     tiles += 1;
                 }
-                // 右侧价格区右对齐、变长：保守覆盖 spark 尾到屏右整列，新旧文本并集全在内
+                // 右侧价格区右对齐、变长：收紧覆盖范围以减小局部刷新面积
                 let rx = sx + sw;
+                let pr_w = (width - rx).min(280);
+                let pr_x = width - pr_w;
                 dirties.push(crate::fbink::DirtyRect {
-                    x: rx,
+                    x: pr_x,
                     y,
-                    w: width - rx,
+                    w: pr_w,
                     h: m.chh,
                 });
                     let (price_s, chg_s) = stock_strings(item.price, item.change, item.pct);
@@ -171,7 +169,6 @@ pub(crate) fn compose_dynamic(
                             x: width - 45,
                             y: y + m.pr_dy + m.pr_px,
                             px: m.pr_px,
-                            anchor: Anchor::End,
                             invert: false,
                         },
                     );
@@ -183,7 +180,6 @@ pub(crate) fn compose_dynamic(
                             x: width - 45,
                             y: y + m.ch_dy + m.ch_px,
                             px: m.ch_px,
-                            anchor: Anchor::End,
                             invert: false,
                         },
                     );
@@ -200,7 +196,6 @@ pub(crate) fn compose_dynamic(
             x: width - MARGIN_X,
             y: height - 24 + px(4),
             px: px(4),
-            anchor: Anchor::End,
             invert: false,
         },
     );

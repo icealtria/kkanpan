@@ -226,9 +226,14 @@ pub fn merge_rects(rects: Vec<DirtyRect>, limit: usize) -> Vec<DirtyRect> {
     let mut groups: Vec<DirtyRect> = Vec::new();
     for &i in &order {
         let r = rects[i];
+        // 仅当两个矩形在同一列（x 和 w 完全一致）且垂直距离较近（<150px），或者它们真正相交时才合并
         match groups
             .iter_mut()
-            .find(|g| r.x <= g.x + g.w && g.x <= r.x + r.w)
+            .find(|g| {
+                let aligned_col = g.x == r.x && g.w == r.w && r.y <= g.y + g.h + 150 && g.y <= r.y + r.h + 150;
+                let overlap = r.x < g.x + g.w && g.x < r.x + r.w && r.y < g.y + g.h && g.y < r.y + r.h;
+                aligned_col || overlap
+            })
         {
             Some(g) => {
                 let (x0, y0) = (g.x.min(r.x), g.y.min(r.y));
@@ -240,6 +245,27 @@ pub fn merge_rects(rects: Vec<DirtyRect>, limit: usize) -> Vec<DirtyRect> {
             }
             None => groups.push(r),
         }
+    }
+    // 如果分组过多，进行更宽松的二次合并（只要水平有重叠就合并，退化到旧版策略）
+    if groups.len() > limit {
+        let mut second: Vec<DirtyRect> = Vec::new();
+        for r in groups {
+            match second
+                .iter_mut()
+                .find(|g| r.x <= g.x + g.w && g.x <= r.x + r.w)
+            {
+                Some(g) => {
+                    let (x0, y0) = (g.x.min(r.x), g.y.min(r.y));
+                    let (x1, y1) = ((g.x + g.w).max(r.x + r.w), (g.y + g.h).max(r.y + r.h));
+                    g.x = x0;
+                    g.y = y0;
+                    g.w = x1 - x0;
+                    g.h = y1 - y0;
+                }
+                None => second.push(r),
+            }
+        }
+        groups = second;
     }
     // 没收敛（组数不比原来少，或仍超限）就原样返回，调用方按老规则整屏 GL16
     if groups.len() < n && groups.len() <= limit {

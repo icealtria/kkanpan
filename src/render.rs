@@ -11,7 +11,7 @@ use crate::layout::{
     TAB_BAR_H, TAB_BAR_Y, TAB_GAP, metrics, paginate, px, spark_points, stock_strings,
     total_pages,
 };
-use crate::text::{Anchor, BlitText, blit_text, fontset, split_name};
+use crate::text::{fontset, split_name};
 
 #[derive(Serialize)]
 struct Tab<'a> {
@@ -94,7 +94,7 @@ fn env() -> &'static Environment<'static> {
 }
 
 pub fn render_svg(data: &[StockData], width: i32, height: i32, view: &str, page: usize) -> String {
-    render_svg_layer(data, width, height, view, page, "full").0
+    render_svg_layer(data, width, height, view, page, "full")
 }
 
 // 卡片布局度量（SVG 模板版与直绘版共享一份数字，零漂移）
@@ -106,10 +106,7 @@ fn render_svg_layer(
     view: &str,
     page: usize,
     layer: &str,
-) -> (String, Vec<BlitText>) {
-    // full 只给 server 预览用，texts 用不上；base 收静态字（动态字由 compose 直 blit）
-    let want_static = layer == "base";
-    let mut texts: Vec<BlitText> = vec![];
+) -> String {
     let large = crate::input::style_mode().is_large();
     let (eff, is_auto) = config::effective_group(view);
     let mode_tag = if is_auto {
@@ -134,31 +131,6 @@ fn render_svg_layer(
             selected: view == m,
         })
         .collect();
-
-    if want_static {
-        let tpx = px(6);
-        texts.push(BlitText { s: "KKANPAN".into(), x: 30, y: 16 + px(8), px: px(8), anchor: Anchor::Start, invert: false });
-        texts.push(BlitText { s: mode_tag.clone(), x: width - 460, y: 20 + tpx, px: tpx, anchor: Anchor::Start, invert: false });
-        texts.push(BlitText {
-            s: (if large { "L" } else { "S" }).to_string(),
-            x: width - 185 + 40,
-            y: 10 + 8 + tpx,
-            px: tpx,
-            anchor: Anchor::Middle,
-            invert: false,
-        });
-        texts.push(BlitText { s: "X".into(), x: width - 95 + 32, y: 40, px: 25, anchor: Anchor::Middle, invert: false });
-        for t in &tabs {
-            texts.push(BlitText {
-                s: t.key.to_string(),
-                x: t.x + t.w / 2,
-                y: t.y + 12 + tpx,
-                px: tpx,
-                anchor: Anchor::Middle,
-                invert: t.selected, // 选中 Tab 是白字黑底
-            });
-        }
-    }
 
     let pages = paginate(data, height, view);
     let total = pages.len();
@@ -213,16 +185,6 @@ fn render_svg_layer(
                     chg_px: 0,
                 });
                 y += HEADER_H;
-                if want_static {
-                    texts.push(BlitText {
-                        s: format!("[ {group} ]"),
-                        x: MARGIN_X + 15,
-                        y: y - HEADER_H + HEADER_GAP + 8 + px(5),
-                        px: px(5),
-                        anchor: Anchor::Start,
-                        invert: true, // 黑底白字条
-                    });
-                }
             }
             Block::Card(item) => {
                 let name = if item.name.is_empty() {
@@ -247,23 +209,6 @@ fn render_svg_layer(
                 } else {
                     stock_strings(item.price, item.change, item.pct)
                 };
-                // sprite 坐标与模板 full 层的 <text> 逐项对齐（x/y/字号/对齐）
-                if want_static {
-                    let nx = MARGIN_X + 15;
-                    let ny = y + name_dy;
-                    texts.push(BlitText { s: l1.clone(), x: nx, y: ny + name_px, px: name_px, anchor: Anchor::Start, invert: false });
-                    if !l2.is_empty() {
-                        texts.push(BlitText {
-                            s: l2.clone(),
-                            x: nx,
-                            y: ny + 2 * name_px + name_px / 3,
-                            px: name_px,
-                            anchor: Anchor::Start,
-                            invert: false,
-                        });
-                    }
-                    texts.push(BlitText { s: item.code.clone(), x: nx, y: code_y + code_px, px: code_px, anchor: Anchor::Start, invert: false });
-                }
                 blocks.push(CtxBlock {
                     is_header: false,
                     group: String::new(),
@@ -309,26 +254,6 @@ fn render_svg_layer(
     }
 
     let status_text = crate::kindle::format_status_bar();
-    if want_static {
-        if !page_text.is_empty() {
-            texts.push(BlitText {
-                s: page_text.clone(),
-                x: width / 2,
-                y: height - 40 + px(4),
-                px: px(4),
-                anchor: Anchor::Middle,
-                invert: false,
-            });
-        }
-        texts.push(BlitText {
-            s: "Swipe H: switch Tab | Swipe V: flip | Tap [X] exit".to_string(),
-            x: MARGIN_X,
-            y: height - 24 + px(4),
-            px: px(4),
-            anchor: Anchor::Start,
-            invert: false,
-        });
-    }
 
     let ctx = Screen {
         w: width,
@@ -351,7 +276,7 @@ fn render_svg_layer(
         status_text,
         footer_hint: "Swipe H: switch Tab | Swipe V: flip | Tap [X] exit",
     };
-    (env().get_template("screen").unwrap().render(&ctx).unwrap(), texts)
+    env().get_template("screen").unwrap().render(&ctx).unwrap()
 }
 
 static BASE: std::sync::LazyLock<
@@ -398,18 +323,30 @@ pub fn render_gray_page(
     let key = (width, height, view.to_string(), style, page, stocks_fp(data));
     let hit = base.contains_key(&key);
     let be = base.entry(key).or_insert_with(|| {
-        let (bsvg, base_texts) = render_svg_layer(data, width, height, view, page, "base");
+        let t_tpl0 = std::time::Instant::now();
+        let bsvg = render_svg_layer(data, width, height, view, page, "base");
+        let t_tpl = t_tpl0.elapsed();
+        let t_parse0 = std::time::Instant::now();
         let btree = parse_tree(&bsvg);
+        let t_parse = t_parse0.elapsed();
+        let t_raster0 = std::time::Instant::now();
         let size = btree.size();
         let mut pix = resvg::tiny_skia::Pixmap::new(size.width() as u32, size.height() as u32)
             .expect("pixmap");
         pix.fill(resvg::tiny_skia::Color::WHITE);
         render_tree_into(&btree, &mut pix);
-        for t in &base_texts {
-            blit_text(&mut pix, t);
-        }
+        let t_raster = t_raster0.elapsed();
+        let t_gray0 = std::time::Instant::now();
         let mut gray = Vec::new();
         pixmap_to_gray_into(&pix, &mut gray);
+        let t_gray = t_gray0.elapsed();
+        crate::dlog!(
+            "[render-base] tpl={}ms parse={}ms raster={}ms gray={}ms",
+            t_tpl.as_millis(),
+            t_parse.as_millis(),
+            t_raster.as_millis(),
+            t_gray.as_millis(),
+        );
         BaseEntry { gray }
     });
     let t_base = t_base0.elapsed();
@@ -473,12 +410,12 @@ mod render_tests {
     fn layers_split_static_dynamic() {
         crate::input::init_state("ALL");
         let d = sample();
-        let (full, _) = render_svg_layer(&d, 1072, 1448, "ALL", 0, "full");
-        let (base, base_texts) = render_svg_layer(&d, 1072, 1448, "ALL", 0, "base");
-        // full 含全部文字；base 的 SVG 里无 <text>，静态字走 blit；动态字由 compose 直 blit
+        let full = render_svg_layer(&d, 1072, 1448, "ALL", 0, "full");
+        let base = render_svg_layer(&d, 1072, 1448, "ALL", 0, "base");
+        // full 含全部文字；base 含静态字（resvg 直排），不含动态字（价格/波形/状态栏走 compose）
         assert!(full.contains("KKANPAN") && full.contains("10.26") && full.contains("浦发银行"));
-        assert!(!base.contains("<text"));
-        assert!(base_texts.iter().any(|t| t.s.contains("浦发银行")));
+        assert!(base.contains("KKANPAN") && base.contains("浦发银行"));
+        assert!(!base.contains("10.26") && !base.contains("<polyline"));
     }
 
     #[test]
@@ -493,35 +430,43 @@ mod render_tests {
     #[test]
     fn gray_blit_writes_dark_pixels() {
         use crate::gray::blit_text_gray;
-        use crate::text::{Anchor, BlitText};
+        use crate::text::BlitText;
         let mut buf = vec![255u8; 200 * 60];
         blit_text_gray(
             &mut buf,
             200,
-            &BlitText { s: "10.26".into(), x: 10, y: 40, px: 33, anchor: Anchor::Start, invert: false },
+            &BlitText { s: "10.26".into(), x: 190, y: 40, px: 33, invert: false },
         );
         assert!(buf.iter().any(|&v| v < 128));
     }
 
     #[test]
     fn glyph_blits_visible_pixels() {
-        use crate::text::{blit_text, sprite_for, Anchor, BlitText};
+        use crate::gray::blit_text_gray;
+        use crate::text::{sprite_for, BlitText};
         let sp = sprite_for('0', 33);
         assert!(!sp.px.is_empty() && sp.w > 0 && sp.h > 0);
-        let mut pix = resvg::tiny_skia::Pixmap::new(200, 60).expect("pixmap");
-        pix.fill(resvg::tiny_skia::Color::WHITE);
-        blit_text(&mut pix, &BlitText { s: "10.26".into(), x: 10, y: 40, px: 33, anchor: Anchor::Start, invert: false });
-        assert!(pix.data().iter().any(|&v| v < 128));
+        let mut buf = vec![255u8; 200 * 60];
+        blit_text_gray(
+            &mut buf,
+            200,
+            &BlitText { s: "10.26".into(), x: 190, y: 40, px: 33, invert: false },
+        );
+        assert!(buf.iter().any(|&v| v < 128));
     }
 
     #[test]
     fn inverted_blits_white_on_black() {
-        // 表头条/选中 Tab：黑底上必须看到亮字，而不是糊成一片
-        use crate::text::{blit_text, Anchor, BlitText};
-        let mut pix = resvg::tiny_skia::Pixmap::new(200, 60).expect("pixmap");
-        pix.fill(resvg::tiny_skia::Color::BLACK);
-        blit_text(&mut pix, &BlitText { s: "A股".into(), x: 10, y: 40, px: 25, anchor: Anchor::Start, invert: true });
-        let bright = pix.data().chunks_exact(4).filter(|p| p[0] > 200).count();
+        // 黑底场景：黑底上必须看到亮字，而不是糊成一片
+        use crate::gray::blit_text_gray;
+        use crate::text::BlitText;
+        let mut buf = vec![0u8; 200 * 60];
+        blit_text_gray(
+            &mut buf,
+            200,
+            &BlitText { s: "ABC".into(), x: 190, y: 40, px: 25, invert: true },
+        );
+        let bright = buf.iter().filter(|&&v| v > 200).count();
         assert!(bright > 50, "bright={bright}");
     }
 }

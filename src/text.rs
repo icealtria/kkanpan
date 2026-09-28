@@ -67,20 +67,16 @@ pub fn precache_names() {
     precache_glyphs();
 }
 
-/// 高频字形预热：数字/符号 × 价格字号（每帧都画，首刷前备好）；
-/// 汉字/字母走懒加载（首次 base 渲染时顺带备好，常驻缓存）
+/// 动态层（价格/涨跌/状态栏）每帧都画，首刷前备好
 pub fn precache_glyphs() {
-    for px in [px(5), px(6), px(8), px(9)] {
-        for ch in "0123456789.+-()% ▲▼/".chars() {
+    for px in [px(4), px(5), px(6), px(8), px(9)] {
+        for ch in "0123456789.+-()% ▲▼/[]:".chars() {
             sprite_for(ch, px);
         }
     }
-    for s in config::stocks() {
-        let name = if s.name.is_empty() { &s.code } else { &s.name };
-        for ch in name.chars().chain(s.group.chars()) {
-            sprite_for(ch, px(8));
-            sprite_for(ch, px(6));
-        }
+    // 状态栏英文 "Updated/BATT/CHG/TOUCH OFF"（px4）
+    for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz|^".chars() {
+        sprite_for(ch, px(4));
     }
 }
 
@@ -114,20 +110,12 @@ pub(crate) struct Sprite {
     pub(crate) px: Vec<u8>, // 白底灰度，255=透明可跳
 }
 
-#[derive(Clone, Copy, PartialEq)]
-pub(crate) enum Anchor {
-    Start,
-    Middle,
-    End,
-}
-
 pub(crate) struct BlitText {
     pub(crate) s: String,
-    pub(crate) x: i32,
-    pub(crate) y: i32, // 基线（对齐 SVG text 的 y）
+    pub(crate) x: i32, // 右端（动态区一律右对齐）
+    pub(crate) y: i32, // 基线
     pub(crate) px: i32,
-    pub(crate) anchor: Anchor,
-    pub(crate) invert: bool, // 白字黑底（表头条/选中 Tab）：blit 时 255-v 反色，与直接渲染等价
+    pub(crate) invert: bool,
 }
 
 pub(crate) static SPRITES: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<(char, i32), Sprite>>> =
@@ -200,47 +188,6 @@ pub(crate) fn render_glyph(ch: char, px: i32) -> Sprite {
         }
     }
     Sprite { w: x1 - x0 + 1, h: bottom - top + 1, dx: x0 - px, dy: base - top, px: out }
-}
-
-pub(crate) fn blit_text(canvas: &mut resvg::tiny_skia::Pixmap, t: &BlitText) {
-    if t.s.is_empty() {
-        return;
-    }
-    let advs: Vec<i32> = t.s.chars().map(|ch| advance_for(ch, t.px)).collect();
-    let total: i32 = advs.iter().sum();
-    let mut pen = match t.anchor {
-        Anchor::Start => t.x,
-        Anchor::Middle => t.x - total / 2,
-        Anchor::End => t.x - total,
-    };
-    let (cw, chh) = (canvas.width() as i32, canvas.height() as i32);
-    let data = canvas.data_mut();
-    // 反白时背景是黑(0)：跳过反色后等于背景的像素
-    let bg: u8 = if t.invert { 0 } else { 255 };
-    for (ch, adv) in t.s.chars().zip(advs) {
-        let sp = sprite_for(ch, t.px);
-        if !sp.px.is_empty() {
-            let (x0, y0) = (pen + sp.dx, t.y - sp.dy);
-            let (xa, xb) = (x0.max(0), (x0 + sp.w).min(cw));
-            let (ya, yb) = (y0.max(0), (y0 + sp.h).min(chh));
-            for yy in ya..yb {
-                let srow = (yy - y0) * sp.w;
-                let drow = yy * cw * 4;
-                for xx in xa..xb {
-                    let v = sp.px[(srow + (xx - x0)) as usize];
-                    let w = if t.invert { 255 - v } else { v };
-                    if w != bg {
-                        let o = (drow + xx * 4) as usize;
-                        data[o] = w;
-                        data[o + 1] = w;
-                        data[o + 2] = w;
-                        data[o + 3] = 255;
-                    }
-                }
-            }
-        }
-        pen += adv;
-    }
 }
 
 pub(crate) static FONTDB: OnceLock<FontSet> = OnceLock::new();

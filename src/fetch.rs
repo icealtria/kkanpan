@@ -215,6 +215,7 @@ fn parse_qt(code: &str, vals: &[String]) -> (f64, f64, f64, f64) {
 }
 
 pub fn refresh_data(view: &str) -> Vec<StockData> {
+    let t0 = std::time::Instant::now();
     let configs = needed_stocks(view);
     let tencent: Vec<String> = configs
         .iter()
@@ -322,6 +323,7 @@ pub fn refresh_data(view: &str) -> Vec<StockData> {
     }
     let at = now_unix();
     CACHED.write().unwrap().insert(view.to_string(), ViewCache { data: items.clone(), at });
+    crate::dlog!("[fetch] view={view} {} stocks in {}ms", items.len(), t0.elapsed().as_millis());
     items
 }
 
